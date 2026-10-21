@@ -34,7 +34,7 @@ The demo bar under the header stands in for the Driver Station: pick the mode, e
 - **Elevator motor wired backwards**: the inversion check sees the elevator move the wrong way.
 - **Arm blocked at 45°**: range verification and Live Tuning run into it.
 
-Every mechanism starts inside its range of motion, and holds where it is while nothing drives it, as a geared mechanism in brake mode does. The elevator's and arm's kG, and the flywheel's kV, start too low, so there is something to tune.
+Every mechanism starts inside its range of motion, and holds where it is while nothing drives it, as a geared mechanism in brake mode does. The arm starts stowed on its lower hard stop, which is also its lower soft limit, so gravity can't pull it out of its range while it is driven at 0 V. The elevator's and arm's kG, and the flywheel's kV, start too low, so there is something to tune.
 
 Demo mode is only on the hosted site. The SystemCore package is built without it.
 
