@@ -38,6 +38,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       file: ${{ steps.version.outputs.file }}
+    env:
+      # Where the package's files are put together
+      PKG_DIR: ${{ github.workspace }}/pkg
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,11 +86,11 @@ jobs:
           NEXT_PUBLIC_SYSTEMCORE: 1
           NEXT_TELEMETRY_DISABLED: 1
 
-      - name: Stage package
+      # opkg-build takes the control files from CONTROL/ and leaves that folder out of the installed files
+      - name: Fill in the package files
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          PKG="$RUNNER_TEMP/pkg"
           # Copies a folder, filling in the @PACKAGE@, @VERSION@ and @PORT@ placeholders in file names and contents
           render() {
             ( cd "$1" && find . -type f ) | while read -r rel; do
@@ -97,28 +100,34 @@ jobs:
                 "$1/$rel" | tr -d '\r' > "$target"
             done
           }
-          render systemcore/overlay "$PKG"
-          # opkg-build takes the control files from CONTROL/ and leaves that folder out of the installed files
-          render systemcore/control "$PKG/CONTROL"
-          mkdir -p "$PKG/usr/share/$PACKAGE_NAME"
-          cp -r out "$PKG/usr/share/$PACKAGE_NAME/www"
-          cp systemcore/assets/icon.png "$PKG/usr/share/$PACKAGE_NAME.png"
+          render systemcore/overlay "$PKG_DIR"
+          render systemcore/control "$PKG_DIR/CONTROL"
 
-          find "$PKG" -type d -exec chmod 755 {} +
-          find "$PKG" -type f -exec chmod 644 {} +
-          chmod 755 "$PKG/usr/local/bin/$PACKAGE_NAME/server.py" \
-            "$PKG/CONTROL/postinst" "$PKG/CONTROL/prerm" "$PKG/CONTROL/postrm"
+      - name: Add the website and icon
+        run: |
+          mkdir -p "$PKG_DIR/usr/share/$PACKAGE_NAME"
+          cp -r out "$PKG_DIR/usr/share/$PACKAGE_NAME/www"
+          cp systemcore/assets/icon.png "$PKG_DIR/usr/share/$PACKAGE_NAME.png"
+
+      - name: Set permissions
+        run: |
+          find "$PKG_DIR" -type d -exec chmod 755 {} +
+          find "$PKG_DIR" -type f -exec chmod 644 {} +
+          chmod 755 "$PKG_DIR/usr/local/bin/$PACKAGE_NAME/server.py" \
+            "$PKG_DIR/CONTROL/postinst" "$PKG_DIR/CONTROL/prerm" "$PKG_DIR/CONTROL/postrm"
 
       - name: Build IPK
-        env:
-          FILE: ${{ steps.version.outputs.file }}
         run: |
           # Every file gets the commit's time, so the same commit gives the same package
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          mkdir -p dist
           # The output folder must be absolute: opkg-build changes directory before writing it
-          "$RUNNER_TEMP/opkg-build" -o 0 -g 0 "$RUNNER_TEMP/pkg" "$PWD/dist"
-          # opkg-build names it <package>_<version>_<arch>.ipk; keep the name the site and releases use
+          "$RUNNER_TEMP/opkg-build" -o 0 -g 0 "$PKG_DIR" "$PWD/dist"
+
+      # opkg-build names it <package>_<version>_<arch>.ipk; keep the name the site and releases use
+      - name: Rename IPK
+        env:
+          FILE: ${{ steps.version.outputs.file }}
+        run: |
           mv dist/*.ipk "dist/$FILE"
           echo "Created dist/$FILE ($(du -h "dist/$FILE" | cut -f1))"
 
