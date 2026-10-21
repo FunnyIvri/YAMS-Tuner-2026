@@ -46,8 +46,10 @@ const DEFS: MechDef[] = [
     name: "Arm/ArmMotor",
     command: "Arm",
     kind: "arm",
-    sim: { kind: "arm", gearing: 60, mass: 2.5, length: 0.5, minPosition: -20 * DEG, maxPosition: 110 * DEG, startingPosition: 0 },
-    softLimits: [-10, 100],
+    // It rests on its lower hard stop, which is also its lower soft limit, as a stowed arm does. Gravity pulls it
+    // back there whenever it is driven at 0 V, so it must not be able to fall past the soft limit.
+    sim: { kind: "arm", gearing: 60, mass: 2.5, length: 0.5, minPosition: -20 * DEG, maxPosition: 110 * DEG, startingPosition: -20 * DEG },
+    softLimits: [-20, 100],
     profiled: true,
     gains: { kP: 25, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, kG: 0.2, maxVelocity: 30, maxAcceleration: 60, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
   },
