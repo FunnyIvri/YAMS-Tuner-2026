@@ -35,7 +35,7 @@ const DEFS: MechDef[] = [
     name: "Elevator/ElevatorMotor",
     command: "Elevator",
     kind: "elevator",
-    sim: { kind: "elevator", gearing: 12, mass: 7, drumRadius: (22 * 0.25 * 0.0254) / (2 * Math.PI), minPosition: 0, maxPosition: 1, startingPosition: 0 },
+    sim: { kind: "elevator", gearing: 12, mass: 7, drumRadius: (22 * 0.25 * 0.0254) / (2 * Math.PI), minPosition: 0, maxPosition: 1, startingPosition: 0.2 },
     softLimits: [0, 0.95],
     profiled: true,
     gains: { kP: 30, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, kG: 0.1, maxVelocity: 1, maxAcceleration: 2, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
@@ -46,7 +46,7 @@ const DEFS: MechDef[] = [
     name: "Arm/ArmMotor",
     command: "Arm",
     kind: "arm",
-    sim: { kind: "arm", gearing: 60, mass: 2.5, length: 0.5, minPosition: -20 * DEG, maxPosition: 110 * DEG, startingPosition: -20 * DEG },
+    sim: { kind: "arm", gearing: 60, mass: 2.5, length: 0.5, minPosition: -20 * DEG, maxPosition: 110 * DEG, startingPosition: 0 },
     softLimits: [-10, 100],
     profiled: true,
     gains: { kP: 25, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, kG: 0.2, maxVelocity: 30, maxAcceleration: 60, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
@@ -198,6 +198,18 @@ class Mechanism {
 
   step(enabled: boolean, dt: number, faults: DemoFaults) {
     this.applyGains()
+    if (this.def.kind !== "flywheel" && !(enabled && this.running)) {
+      // Nothing drives it, so the motor is in brake mode and the gearbox holds it where it is. Every mechanism
+      // starts inside its range of motion and stays there until it is driven.
+      this.sim.restart()
+      this.sim.velocity = 0
+      this.lastOut = 0
+      this.volts = 0
+      this.stator = 0
+      this.supply = 0
+      this.temp += -(this.temp - 25) * 0.01 * dt
+      return
+    }
     let out = this.controller(enabled, dt)
     const ramp = this.gains.closedRamp ?? 0
     if (ramp > 0 && !this.voltageEnabled && this.running) {

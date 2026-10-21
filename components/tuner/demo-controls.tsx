@@ -39,7 +39,7 @@ function DemoBar({ robot }: { robot: DemoRobot }) {
           <FlaskConical className="size-4" aria-hidden />
           Demo robot
         </p>
-        <p className="text-xs text-muted-foreground">Simulated in this page. Nothing here moves a real mechanism.</p>
+        <p className="text-xs text-muted-foreground">Simulated in this page. Nothing real moves.</p>
 
         <div className="flex items-center gap-2">
           <label htmlFor="demo-mode" className="text-xs text-muted-foreground">
