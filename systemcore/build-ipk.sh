@@ -68,7 +68,7 @@ render "$SCRIPT_DIR/control" "$CONTROL_DIR"
 
 mkdir -p "$DATA_DIR/usr/share/$PACKAGE_NAME"
 cp -r "$REPO_ROOT/out" "$DATA_DIR/usr/share/$PACKAGE_NAME/www"
-cp "$REPO_ROOT/public/apple-icon.png" "$DATA_DIR/usr/share/$PACKAGE_NAME.png"
+cp "$SCRIPT_DIR/assets/icon.png" "$DATA_DIR/usr/share/$PACKAGE_NAME.png"
 
 # 3. Permissions
 find "$DATA_DIR" -type d -exec chmod 755 {} +

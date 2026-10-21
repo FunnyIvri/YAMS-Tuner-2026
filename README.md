@@ -57,7 +57,7 @@ systemcore/build-ipk.sh
 
 The `.ipk` is written to `dist/`. Set `PORT`, `VERSION` or `PACKAGE_NAME` to override the defaults, and pass `--skip-site-build` to reuse an existing `out/` folder (it must be built without `NEXT_PUBLIC_BASE_PATH`).
 
-Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, and `overlay/` holds the files installed onto the device (systemd units and `server.py`). `@PACKAGE@`, `@VERSION@` and `@PORT@` placeholders are filled in at build time.
+Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, `overlay/` holds the files installed onto the device (systemd units and `server.py`), and `assets/icon.png` is the 845x480 tile shown in the SystemCore UI. `@PACKAGE@`, `@VERSION@` and `@PORT@` placeholders are filled in at build time.
 
 ## Project layout
 
