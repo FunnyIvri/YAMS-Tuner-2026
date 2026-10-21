@@ -41,6 +41,10 @@ On a phone or tablet in landscape, the telemetry sits beside the setpoint contro
 
 ![The tuner on an iPhone in landscape, holding an arm at 70 degrees](docs/images/phone-landscape.png)
 
+On an iPad in landscape, the two columns stay side by side, with the stop button on the left:
+
+![The tuner on an iPad in landscape, tuning an arm, with the stop button on the left and the telemetry chart on the right](docs/images/ipad-landscape.png)
+
 ## Demo mode
 
 Pick **Demo (no robot)** and press **Start demo**, or open the site with `?demo` (for example https://tuning.yassrobotics.com/?demo), to try the tuner without a robot or a simulation. A simulated robot runs in the page with four YAMS mechanisms: an elevator, an arm, a turret with no motion profile, and a two-motor shooter flywheel. Their physics come from [YAMG](https://github.com/Yet-Another-Software-Suite/yamg)'s simulation: NEO motors with stator and supply current limits, gravity, hard stops and battery sag.
