@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react"
 import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ON_SYSTEMCORE, REPO, REPO_URL } from "@/lib/site"
+import { REPO, REPO_URL } from "@/lib/site"
 
 const RELEASES_URL = `${REPO_URL}/releases/latest`
 
@@ -24,15 +23,16 @@ const BUILT_IPK: Ipk | null =
     : null
 
 /**
- * Links to the .ipk built with this copy of the site. A build without one, such as `pnpm dev`, links to the .ipk
- * attached to the latest GitHub release instead, or the releases page if it can't be found.
+ * Links to the .ipk built with this copy of the site, with how to install it. A build without one, such as
+ * `pnpm dev`, links to the .ipk attached to the latest GitHub release instead, or the releases page if it can't be
+ * found.
  */
 export function IpkDownload() {
   const [latest, setLatest] = useState<Ipk | null>(null)
   const ipk = BUILT_IPK ?? latest
 
   useEffect(() => {
-    if (ON_SYSTEMCORE || BUILT_IPK) return
+    if (BUILT_IPK) return
     const controller = new AbortController()
     fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
@@ -47,33 +47,28 @@ export function IpkDownload() {
     return () => controller.abort()
   }, [])
 
-  if (ON_SYSTEMCORE) return null
-
   return (
-    <Tooltip>
-      <TooltipTrigger
+    <div className="flex flex-col items-center gap-x-3 gap-y-1 md:flex-row">
+      <Button
+        variant="outline"
+        size="sm"
+        nativeButton={false}
         render={
-          <Button
-            variant="outline"
-            size="sm"
-            nativeButton={false}
-            aria-label="Download the SystemCore package (.ipk)"
-            render={
-              <a
-                href={ipk?.url ?? RELEASES_URL}
-                download={BUILT_IPK ? BUILT_IPK_FILE : undefined}
-                target={ipk ? undefined : "_blank"}
-                rel="noreferrer"
-              />
-            }
+          <a
+            href={ipk?.url ?? RELEASES_URL}
+            download={BUILT_IPK ? BUILT_IPK_FILE : undefined}
+            target={ipk ? undefined : "_blank"}
+            rel="noreferrer"
+            data-ipk="download"
           />
         }
       >
         <Download data-icon="inline-start" />
-        <span className="hidden sm:inline">Download IPK</span>
-        {ipk && <span className="hidden font-mono normal-case text-muted-foreground sm:inline">{ipk.version}</span>}
-      </TooltipTrigger>
-      <TooltipContent>Install the tuner on SystemCore: drag the .ipk onto http://robot.local</TooltipContent>
-    </Tooltip>
+        Download for SystemCore (.ipk)
+      </Button>
+      <span className="text-center text-xs text-muted-foreground md:text-left" data-ipk="hint">
+        Install it by dragging the .ipk onto http://robot.local, then open the yams-tuner tile.
+      </span>
+    </div>
   )
 }

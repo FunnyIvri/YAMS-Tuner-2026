@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useRobotState, useTuner } from "@/components/tuner/tuner-context"
 import { NativeSelect } from "@/components/tuner/panel"
-import { IpkDownload } from "@/components/tuner/ipk-download"
-import { GitHubLink } from "@/components/tuner/github-link"
 import { ThemeToggle } from "@/components/tuner/theme-toggle"
 import yamsLogo from "@/components/tuner/yams-logo.png"
 import { cn } from "@/lib/utils"
@@ -53,8 +51,6 @@ export function ConnectionBar() {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-1 lg:ml-2">
-            <IpkDownload />
-            <GitHubLink />
             <ThemeToggle />
           </div>
         </div>

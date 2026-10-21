@@ -1,28 +1,19 @@
-import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ON_SYSTEMCORE, REPO_URL } from "@/lib/site"
+import { REPO_URL } from "@/lib/site"
 
-/** Link to the source repository. Only on the hosted site: the SystemCore build is usually offline. */
+/** Link to the source repository, in the footer. */
 export function GitHubLink() {
-  if (ON_SYSTEMCORE) return null
-
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            nativeButton={false}
-            aria-label="YAMS Live Tuner on GitHub"
-            render={<a href={REPO_URL} target="_blank" rel="noreferrer" />}
-          />
-        }
-      >
+    <a
+      href={REPO_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-1 text-sm font-medium transition-colors hover:text-foreground/80"
+    >
+      <span className="size-4">
         <GitHubMark />
-      </TooltipTrigger>
-      <TooltipContent>View the source on GitHub</TooltipContent>
-    </Tooltip>
+      </span>
+      <span>GitHub</span>
+    </a>
   )
 }
 

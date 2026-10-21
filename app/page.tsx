@@ -9,7 +9,7 @@ import { SetpointPanel } from "@/components/tuner/setpoint-panel"
 import { VoltageInversionCheck } from "@/components/tuner/voltage-inversion-check"
 import { GainsPanel } from "@/components/tuner/gains-panel"
 import { TelemetryPanel } from "@/components/tuner/telemetry-panel"
-import { VersionFooter } from "@/components/tuner/version-footer"
+import { SiteFooter } from "@/components/tuner/site-footer"
 
 export default function Page() {
   return (
@@ -19,7 +19,7 @@ export default function Page() {
       <div aria-hidden className="yass-stripe" />
       <StopBar />
       {/* On a phone turned sideways (short:), the telemetry is pinned on the left and everything else scrolls on the right. */}
-      <main className="mx-auto grid max-w-7xl gap-4 px-4 pt-6 pb-12 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
+      <main className="mx-auto grid max-w-7xl gap-4 px-4 pt-6 pb-8 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
         <div className="flex flex-col gap-4 short:contents short:[&>*]:col-start-2">
           <MechanismPanel />
           <SafetyChecklist />
@@ -36,7 +36,7 @@ export default function Page() {
           </div>
         </div>
       </main>
-      <VersionFooter />
+      <SiteFooter />
     </TunerProvider>
   )
 }
