@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Courier_Prime, Inter, JetBrains_Mono, Press_Start_2P } from 'next/font/google'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -49,7 +48,6 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased">
         <TooltipProvider>{children}</TooltipProvider>
-        {process.env.VERCEL && <Analytics />}
       </body>
     </html>
   )
