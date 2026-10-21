@@ -1,8 +1,8 @@
 [Unit]
-Description=@PACKAGE@ socket
+Description=${PACKAGE_NAME} socket
 
 [Socket]
-ListenStream=@PORT@
+ListenStream=${PORT}
 Accept=no
 NoDelay=true
 KeepAlive=true

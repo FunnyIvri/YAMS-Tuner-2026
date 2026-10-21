@@ -64,7 +64,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    root = sys.argv[1] if len(sys.argv) > 1 else "/usr/share/@PACKAGE@/www"
+    root = sys.argv[1] if len(sys.argv) > 1 else "/usr/share/${PACKAGE_NAME}/www"
 
     httpd = http.server.ThreadingHTTPServer(("", 0), partial(Handler, directory=root), bind_and_activate=False)
     httpd.socket = systemd_socket()

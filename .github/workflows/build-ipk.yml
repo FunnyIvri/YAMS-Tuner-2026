@@ -91,13 +91,14 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Copies a folder, filling in the @PACKAGE@, @VERSION@ and @PORT@ placeholders in file names and contents
+          # Copies a folder, filling in ${PACKAGE_NAME}, ${VERSION} and ${PORT} in file names and contents.
+          # Only these are replaced, so the install scripts' other shell variables are left alone.
+          vars='${PACKAGE_NAME} ${VERSION} ${PORT}'
           render() {
             ( cd "$1" && find . -type f ) | while read -r rel; do
-              target="$2/${rel//@PACKAGE@/$PACKAGE_NAME}"
+              target="$2/$(envsubst "$vars" <<< "$rel")"
               mkdir -p "$(dirname "$target")"
-              sed -e "s|@PACKAGE@|$PACKAGE_NAME|g" -e "s|@VERSION@|$VERSION|g" -e "s|@PORT@|$PORT|g" \
-                "$1/$rel" | tr -d '\r' > "$target"
+              envsubst "$vars" < "$1/$rel" | tr -d '\r' > "$target"
             done
           }
           render systemcore/overlay "$PKG_DIR"

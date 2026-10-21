@@ -1,12 +1,12 @@
-Package: @PACKAGE@
-Version: @VERSION@
+Package: ${PACKAGE_NAME}
+Version: ${VERSION}
 Description: YAMS Live Tuner, safe live tuning for FRC mechanisms
 Section: development
 Priority: optional
 Maintainer: Yet Another Software Suite
 Architecture: all
 Source: https://github.com/Yet-Another-Software-Suite/YAMS-Tuner
-X-Port: @PORT@
+X-Port: ${PORT}
 X-Has-UI: true
 X-Auto-Start: true
-X-Icon-Path: /usr/share/@PACKAGE@.png
+X-Icon-Path: /usr/share/${PACKAGE_NAME}.png

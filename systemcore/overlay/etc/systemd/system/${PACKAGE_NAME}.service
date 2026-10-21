@@ -1,0 +1,20 @@
+[Unit]
+Description=${PACKAGE_NAME} web server (socket activated)
+Requires=${PACKAGE_NAME}.socket
+After=${PACKAGE_NAME}.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env python3 /usr/local/bin/${PACKAGE_NAME}/server.py /usr/share/${PACKAGE_NAME}/www
+Restart=no
+KillMode=mixed
+TimeoutStopSec=3
+
+DynamicUser=true
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+# Started by the socket unit only
+[Install]

@@ -1,6 +1,4 @@
 #!/bin/sh
-PACKAGE_NAME="@PACKAGE@"
-
 echo "Cleaning up $PACKAGE_NAME"
 
 systemctl daemon-reload

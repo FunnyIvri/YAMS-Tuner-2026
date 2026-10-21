@@ -1,6 +1,4 @@
 #!/bin/sh
-PACKAGE_NAME="@PACKAGE@"
-
 echo "Stopping $PACKAGE_NAME"
 
 systemctl stop "$PACKAGE_NAME.socket" 2>/dev/null || true
