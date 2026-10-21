@@ -4,12 +4,9 @@ import { useEffect, useState } from "react"
 import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { ON_SYSTEMCORE, REPO, REPO_URL } from "@/lib/site"
 
-const REPO = "Yet-Another-Software-Suite/YAMS-Tuner"
-const RELEASES_URL = `https://github.com/${REPO}/releases/latest`
-
-/** Set when the site is built into the SystemCore package, where the tuner is already installed. */
-const ON_SYSTEMCORE = process.env.NEXT_PUBLIC_SYSTEMCORE === "1"
+const RELEASES_URL = `${REPO_URL}/releases/latest`
 
 interface LatestIpk {
   url: string
