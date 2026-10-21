@@ -55,6 +55,7 @@ jobs:
         run: pnpm build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
           NEXT_PUBLIC_IPK_FILE: ${{ steps.version.outputs.file }}
           NEXT_PUBLIC_IPK_VERSION: ${{ steps.version.outputs.version }}
           NEXT_TELEMETRY_DISABLED: 1
