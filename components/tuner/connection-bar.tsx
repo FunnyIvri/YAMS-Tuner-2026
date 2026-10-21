@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { useRobotState, useTuner } from "@/components/tuner/tuner-context"
 import { NativeSelect } from "@/components/tuner/panel"
 import { IpkDownload } from "@/components/tuner/ipk-download"
+import yamsLogo from "@/components/tuner/yams-logo.png"
 import { cn } from "@/lib/utils"
 import type { LiveTarget } from "@/lib/nt/live-nt"
 
@@ -32,7 +33,7 @@ export function ConnectionBar() {
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
-          <span aria-hidden className="hazard-stripes block h-7 w-2 rounded-sm" />
+          <img src={yamsLogo.src} alt="" aria-hidden width={42} height={28} className="h-7 w-auto shrink-0" />
           <div className="flex flex-col">
             <h1 className="font-mono text-sm font-semibold uppercase tracking-wider">YAMS Live Tuner</h1>
             <p className="text-xs text-muted-foreground">Elevators, arms, pivots and flywheels over NT4</p>
