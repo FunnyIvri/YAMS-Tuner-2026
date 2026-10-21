@@ -20,11 +20,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  validate:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      prev_tag: ${{ steps.meta.outputs.prev_tag }}
     env:
       VERSION: ${{ inputs.version }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,29 +55,35 @@ jobs:
             echo "prev_tag=$PREV_TAG"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+  ipk:
+    needs: validate
+    uses: ./.github/workflows/build-ipk.yml
+    with:
+      version: ${{ needs.validate.outputs.version }}
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+  release:
+    needs: [validate, ipk]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          node-version: 22
-          cache: pnpm
+          fetch-depth: 0
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build IPK
-        run: systemcore/build-ipk.sh
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
+      - name: Download IPK
+        uses: actions/download-artifact@v4
+        with:
+          name: yams-tuner-ipk
+          path: dist
 
       - name: Write release notes
         run: |
           .github/scripts/release-notes.sh \
-            "${{ steps.meta.outputs.version }}" \
-            "dist/yams-tuner_${{ steps.meta.outputs.version }}.ipk" \
-            "${{ steps.meta.outputs.prev_tag }}" > release-notes.md
+            "${{ needs.validate.outputs.version }}" \
+            "dist/${{ needs.ipk.outputs.file }}" \
+            "${{ needs.validate.outputs.prev_tag }}" > release-notes.md
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create release
@@ -83,8 +92,8 @@ jobs:
           if [ "${{ inputs.prerelease }}" = "true" ]; then
             args+=(--prerelease)
           fi
-          gh release create "${{ steps.meta.outputs.tag }}" dist/*.ipk \
+          gh release create "${{ needs.validate.outputs.tag }}" dist/*.ipk \
             --target "$GITHUB_SHA" \
-            --title "YAMS Live Tuner ${{ steps.meta.outputs.tag }}" \
+            --title "YAMS Live Tuner ${{ needs.validate.outputs.tag }}" \
             --notes-file release-notes.md \
             "${args[@]}"

@@ -1,5 +1,5 @@
 #!/bin/sh
-PACKAGE_NAME="@PACKAGE@"
+PACKAGE_NAME="yams-tuner"
 
 echo "Cleaning up $PACKAGE_NAME"
 

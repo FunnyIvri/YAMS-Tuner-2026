@@ -1,11 +1,11 @@
 [Unit]
-Description=@PACKAGE@ web server (socket activated)
-Requires=@PACKAGE@.socket
-After=@PACKAGE@.socket
+Description=yams-tuner web server (socket activated)
+Requires=yams-tuner.socket
+After=yams-tuner.socket
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env python3 /usr/local/bin/@PACKAGE@/server.py /usr/share/@PACKAGE@/www
+ExecStart=/usr/bin/env python3 /usr/local/bin/yams-tuner/server.py /usr/share/yams-tuner/www
 Restart=no
 KillMode=mixed
 TimeoutStopSec=3

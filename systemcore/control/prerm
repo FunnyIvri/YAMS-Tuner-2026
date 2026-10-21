@@ -1,5 +1,5 @@
 #!/bin/sh
-PACKAGE_NAME="@PACKAGE@"
+PACKAGE_NAME="yams-tuner"
 
 echo "Stopping $PACKAGE_NAME"
 

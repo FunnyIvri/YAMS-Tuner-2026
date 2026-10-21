@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ipk:
+    uses: ./.github/workflows/build-ipk.yml
+
   build:
+    needs: ipk
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,32 +41,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Pick package version
-        id: version
-        run: |
-          # The same scheme as build-ipk.yml: a unique, ordered suffix on the package.json version
-          version="$(node -p "require('./package.json').version")+${GITHUB_RUN_NUMBER}.$(git rev-parse --short HEAD)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "file=yams-tuner_${version}.ipk" >> "$GITHUB_OUTPUT"
-
-      # Built first: it builds the site into out/ for SystemCore, which the hosted build below replaces.
-      - name: Build IPK
-        run: systemcore/build-ipk.sh
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-
       - name: Build static site
         run: pnpm build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          APP_VERSION: ${{ steps.version.outputs.version }}
-          NEXT_PUBLIC_IPK_FILE: ${{ steps.version.outputs.file }}
-          NEXT_PUBLIC_IPK_VERSION: ${{ steps.version.outputs.version }}
+          APP_VERSION: ${{ needs.ipk.outputs.version }}
+          NEXT_PUBLIC_IPK_FILE: ${{ needs.ipk.outputs.file }}
+          NEXT_PUBLIC_IPK_VERSION: ${{ needs.ipk.outputs.version }}
           NEXT_TELEMETRY_DISABLED: 1
 
       # Served beside the site, so the Download IPK button always gets the package built from this commit.
       - name: Add IPK to the site
-        run: cp "dist/${{ steps.version.outputs.file }}" out/
+        uses: actions/download-artifact@v4
+        with:
+          name: yams-tuner-ipk
+          path: out
 
       - name: Disable Jekyll
         run: touch out/.nojekyll
