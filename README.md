@@ -61,16 +61,9 @@ The tuner can be installed on SystemCore as a package, so it is served from the 
 
 Press **Download IPK** on https://tuning.yassrobotics.com/ for `yams-tuner_<version>.ipk` built from the same commit as the site, or download it from the [latest release](https://github.com/Yet-Another-Software-Suite/YAMS-Tuner/releases/latest) or the **Build SystemCore IPK** workflow run artifacts. Open the SystemCore web interface at http://robot.local and drag the `.ipk` onto the home page or the **Package Manager** tab.
 
-To build the package yourself (Linux or WSL, needs `tar`, `ar` and `gzip`):
+The package is built by the **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) with [opkg-build](https://git.yoctoproject.org/opkg-utils/) from opkg-utils. It builds the site with `NEXT_PUBLIC_SYSTEMCORE=1` and no base path, stages it under `/usr/share/yams-tuner/www` with the files in `systemcore/`, and packs it. To get a package from a branch, push it or open a pull request and download the `yams-tuner-ipk` artifact from the run.
 
-```bash
-pnpm install
-systemcore/build-ipk.sh
-```
-
-The `.ipk` is written to `dist/`. Set `PORT`, `VERSION` or `PACKAGE_NAME` to override the defaults, and pass `--skip-site-build` to reuse an existing `out/` folder (it must be built with `NEXT_PUBLIC_SYSTEMCORE=1` and without `NEXT_PUBLIC_BASE_PATH`).
-
-Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, `overlay/` holds the files installed onto the device (systemd units and `server.py`), and `assets/icon.png` is the 845x480 tile shown in the SystemCore UI. `@PACKAGE@`, `@VERSION@` and `@PORT@` placeholders are filled in at build time.
+Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, `overlay/` holds the files installed onto the device (systemd units and `server.py`), and `assets/icon.png` is the 845x480 tile shown in the SystemCore UI. `@PACKAGE@`, `@VERSION@` and `@PORT@` placeholders are filled in by the workflow, from its `PACKAGE_NAME` and `PORT` settings and the package version.
 
 ## Project layout
 
@@ -82,7 +75,7 @@ Package sources live in `systemcore/`: `control/` holds the package metadata and
 | `lib/nt/` | NetworkTables 4 client built on FRC Web Components |
 | `lib/demo/` | Demo mode: the simulated robot, and the physics ported from YAMG |
 | `lib/yams/` | YAMS topic names and safety limits |
-| `systemcore/` | SystemCore package sources and `build-ipk.sh` |
+| `systemcore/` | SystemCore package sources |
 
 ## Deployment
 
@@ -94,6 +87,6 @@ The workflow sets `NEXT_PUBLIC_BASE_PATH` to the Pages subpath (for example `/YA
 
 https://tuning.yassrobotics.com/ is an nginx reverse proxy in front of the GitHub Pages site (https://yet-another-software-suite.github.io/YAMS-Tuner/). It serves the tuner from `/` and passes the `/YAMS-Tuner/` asset paths through, so every Pages deploy shows up there with no extra step.
 
-The **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) builds the `.ipk` on every push and pull request and uploads it as a workflow artifact. The **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) also builds it on every push to `main` and publishes it beside the site, where the **Download IPK** button links to it. A build without it, such as `pnpm dev`, links to the latest release instead.
+The **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) builds the `.ipk` on every push and pull request and uploads it as a workflow artifact. The **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) runs it on every push to `main` and publishes the `.ipk` beside the site, where the **Download IPK** button links to it. A build without it, such as `pnpm dev`, links to the latest release instead.
 
-To publish a release, open **Actions > Release > Run workflow** and enter a version such as `1.2.0`. The **Release** workflow (`.github/workflows/release.yml`) builds the `.ipk` with that version, tags the commit as `v1.2.0`, and creates a GitHub release with the `.ipk` attached. The release description lists the commits since the previous release, install steps for SystemCore and the file's SHA-256 checksum (see `.github/scripts/release-notes.sh`).
+To publish a release, open **Actions > Release > Run workflow** and enter a version such as `1.2.0`. The **Release** workflow (`.github/workflows/release.yml`) runs the **Build SystemCore IPK** workflow with that version, tags the commit as `v1.2.0`, and creates a GitHub release with the `.ipk` attached. The release description lists the commits since the previous release, install steps for SystemCore and the file's SHA-256 checksum (see `.github/scripts/release-notes.sh`).
