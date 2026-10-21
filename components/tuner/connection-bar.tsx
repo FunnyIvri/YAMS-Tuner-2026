@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Plug, Unplug } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,6 +10,7 @@ import { IpkDownload } from "@/components/tuner/ipk-download"
 import { GitHubLink } from "@/components/tuner/github-link"
 import yamsLogo from "@/components/tuner/yams-logo.png"
 import { cn } from "@/lib/utils"
+import { DEMO_HOST } from "@/lib/demo/host"
 import type { LiveTarget } from "@/lib/nt/live-nt"
 
 type TargetKind = LiveTarget["kind"]
@@ -24,9 +25,18 @@ export function ConnectionBar() {
   const [error, setError] = useState<string | null>(null)
 
   const onConnect = async () => {
-    const target: LiveTarget = kind === "sim" ? { kind } : kind === "robot" ? { kind, team } : { kind, host: custom }
+    const target: LiveTarget =
+      kind === "sim" || kind === "demo" ? { kind } : kind === "robot" ? { kind, team } : { kind, host: custom }
     setError(await connect(target))
   }
+
+  // A link with ?demo opens straight into the demo, so it can be shared for trying the tuner out.
+  useEffect(() => {
+    // The SystemCore package has no demo. The check is inline so its build drops the demo entirely.
+    if (process.env.NEXT_PUBLIC_SYSTEMCORE === "1" || !new URLSearchParams(window.location.search).has("demo")) return
+    setKind("demo")
+    connect({ kind: "demo" }).then(setError)
+  }, [connect])
 
   const connected = status === "connected"
 
@@ -65,6 +75,7 @@ export function ConnectionBar() {
             <option value="robot">Robot (team)</option>
             <option value="sim">Simulation</option>
             <option value="custom">Custom host</option>
+            {process.env.NEXT_PUBLIC_SYSTEMCORE !== "1" && <option value="demo">Demo (no robot)</option>}
           </NativeSelect>
           {kind === "robot" && (
             <>
@@ -100,7 +111,7 @@ export function ConnectionBar() {
           {status === "idle" ? (
             <Button type="submit" size="sm">
               <Plug data-icon="inline-start" />
-              Connect
+              {process.env.NEXT_PUBLIC_SYSTEMCORE !== "1" && kind === "demo" ? "Start demo" : "Connect"}
             </Button>
           ) : (
             <Button type="button" size="sm" variant="outline" onClick={disconnect}>
@@ -117,7 +128,17 @@ export function ConnectionBar() {
                 connected ? "bg-foreground" : status === "connecting" ? "animate-pulse bg-hazard" : "bg-border",
               )}
             />
-            <span>{connected ? host : status === "connecting" ? `Connecting ${host ?? ""}` : "Offline"}</span>
+            <span>
+              {process.env.NEXT_PUBLIC_SYSTEMCORE !== "1" && host === DEMO_HOST
+                ? connected
+                  ? "Demo robot"
+                  : "Starting demo"
+                : connected
+                  ? host
+                  : status === "connecting"
+                    ? `Connecting ${host ?? ""}`
+                    : "Offline"}
+            </span>
             {connected && robot && (
               <span className={cn("border-l border-border pl-2", robot.eStop && "text-destructive")}>
                 {robot.eStop ? "E-STOP" : `${MODE_LABEL[robot.mode]} · ${robot.enabled ? "Enabled" : "Disabled"}`}

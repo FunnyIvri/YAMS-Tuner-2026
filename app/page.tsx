@@ -1,6 +1,7 @@
 import { TunerProvider } from "@/components/tuner/tuner-context"
 import { ConnectionBar } from "@/components/tuner/connection-bar"
 import { StopBar } from "@/components/tuner/stop-bar"
+import { DemoControls } from "@/components/tuner/demo-controls"
 import { MechanismPanel } from "@/components/tuner/mechanism-panel"
 import { SafetyChecklist } from "@/components/tuner/safety-checklist"
 import { RangeVerification } from "@/components/tuner/range-verification"
@@ -13,6 +14,7 @@ export default function Page() {
   return (
     <TunerProvider>
       <ConnectionBar />
+      <DemoControls />
       <StopBar />
       <main className="mx-auto grid max-w-7xl gap-4 px-4 py-6 lg:grid-cols-2">
         <div className="flex flex-col gap-4">

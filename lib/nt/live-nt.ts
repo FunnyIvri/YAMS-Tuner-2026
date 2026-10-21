@@ -2,8 +2,10 @@
 // YAGSL config generator's Live mode so a hosted HTTPS page can reach a robot on the local network.
 
 import type { Nt4Client as Nt4ClientLike } from "@frc-web-components/fwc/source-providers/nt4"
+import type { DemoRobot } from "@/lib/demo/demo-robot"
+import { DEMO_AVAILABLE, DEMO_HOST } from "@/lib/demo/host"
 
-export type LiveTarget = { kind: "sim" } | { kind: "robot"; team: string } | { kind: "custom"; host: string }
+export type LiveTarget = { kind: "sim" } | { kind: "robot"; team: string } | { kind: "custom"; host: string } | { kind: "demo" }
 
 export type ConnectionStatus = "idle" | "connecting" | "connected"
 
@@ -35,6 +37,8 @@ export function targetHost(target: LiveTarget): string | null {
       return teamAddress(target.team)
     case "custom":
       return target.host.trim() || null
+    case "demo":
+      return DEMO_AVAILABLE ? DEMO_HOST : null
   }
 }
 
@@ -106,10 +110,14 @@ export class LiveNT {
   private status: ConnectionStatus = "idle"
   private host: string | null = null
   private newestServerTimeUs = 0
+  private demoRobot: DemoRobot | null = null
 
   getStatus = (): ConnectionStatus => this.status
   getHost = (): string | null => this.host
   getVersion = (): number => this.version
+
+  /** The simulated robot while connected to the demo, otherwise null. */
+  getDemo = (): DemoRobot | null => (this.host === DEMO_HOST ? this.demoRobot : null)
 
   get<T = unknown>(topic: string): T | undefined {
     return this.values.get(topic) as T | undefined
@@ -166,19 +174,43 @@ export class LiveNT {
 
   async connect(host: string, prefixes: string[]): Promise<void> {
     this.disconnect()
-    installLocalNetworkWebSocket()
-    const { Nt4Client } = await import("@frc-web-components/fwc/source-providers/nt4")
     this.host = host
     this.setStatus("connecting")
-    const client: Nt4ClientLike = new Nt4Client(
+    const onAnnounce = (topic: { name: string; type: string; properties?: Record<string, unknown> }) => {
+      if (this.client !== client) return
+      this.types.set(topic.name, topic.type)
+      this.properties.set(topic.name, topic.properties ?? {})
+      this.notify()
+    }
+    const onData = (topic: { name: string }, timestampUs: number, value: unknown) => {
+      if (this.client !== client) return
+      if (timestampUs > this.newestServerTimeUs) this.newestServerTimeUs = timestampUs
+      this.values.set(topic.name, value)
+      this.sampleListeners.forEach((l) => l(topic.name, timestampUs, value))
+      this.notify()
+    }
+    const onConnect = () => {
+      if (this.client !== client) return
+      this.setStatus("connected")
+    }
+    let client: Nt4ClientLike
+    if (process.env.NEXT_PUBLIC_SYSTEMCORE !== "1" && host === DEMO_HOST) {
+      const { DemoNt4Client, DemoRobot } = await import("@/lib/demo/demo-robot")
+      if (this.host !== host) return
+      // The same robot across reconnects, so its gains and faults are kept until it is reset.
+      this.demoRobot ??= new DemoRobot()
+      client = new DemoNt4Client(this.demoRobot, onAnnounce, onData, onConnect) as unknown as Nt4ClientLike
+      this.client = client
+      client.connect()
+      return
+    }
+    installLocalNetworkWebSocket()
+    const { Nt4Client } = await import("@frc-web-components/fwc/source-providers/nt4")
+    if (this.host !== host) return
+    client = new Nt4Client(
       host,
       APP_NAME,
-      (topic) => {
-        if (this.client !== client) return
-        this.types.set(topic.name, topic.type)
-        this.properties.set(topic.name, topic.properties ?? {})
-        this.notify()
-      },
+      onAnnounce,
       (topic) => {
         if (this.client !== client) return
         this.types.delete(topic.name)
@@ -186,17 +218,8 @@ export class LiveNT {
         this.values.delete(topic.name)
         this.notify()
       },
-      (topic, timestampUs, value) => {
-        if (this.client !== client) return
-        if (timestampUs > this.newestServerTimeUs) this.newestServerTimeUs = timestampUs
-        this.values.set(topic.name, value)
-        this.sampleListeners.forEach((l) => l(topic.name, timestampUs, value))
-        this.notify()
-      },
-      () => {
-        if (this.client !== client) return
-        this.setStatus("connected")
-      },
+      onData,
+      onConnect,
       () => {
         if (this.client !== client) return
         this.values.clear()
