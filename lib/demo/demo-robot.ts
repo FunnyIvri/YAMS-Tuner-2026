@@ -31,46 +31,50 @@ interface MechDef {
 const DEFS: MechDef[] = [
   {
     // kP in V/m, kV in V/(m/s), kA in V/(m/s²), max velocity in m/s and acceleration in m/s².
-    // kG is too low on purpose (about 0.46 V holds the carriage), so the elevator sags until it is tuned.
+    // YAMG's default elevator: 15:1, 5 kg on a 1 inch drum, kP 50. kG is too low on purpose (about 0.30 V holds the
+    // carriage), so the elevator sags until it is tuned.
     name: "Elevator/ElevatorMotor",
     command: "Elevator",
     kind: "elevator",
-    sim: { kind: "elevator", gearing: 12, mass: 7, drumRadius: (22 * 0.25 * 0.0254) / (2 * Math.PI), minPosition: 0, maxPosition: 1, startingPosition: 0.2 },
+    sim: { kind: "elevator", gearing: 15, mass: 5, drumRadius: 0.0254, minPosition: 0, maxPosition: 1, startingPosition: 0.2 },
     softLimits: [0, 0.95],
     profiled: true,
-    gains: { kP: 30, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, kG: 0.1, maxVelocity: 1, maxAcceleration: 2, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
+    gains: { kP: 50, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, kG: 0.1, maxVelocity: 1, maxAcceleration: 2, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
   },
   {
     // kP in V per rotation, kV in V/(rot/s), max velocity in RPM and acceleration in RPM/s.
-    // kG is too low on purpose (about 0.37 V holds it level).
+    // YAMG's default arm: 60:1, 3 kg and 1 m long, kP 150 and kD 30. kG is too low on purpose (about 0.89 V holds it
+    // level).
     name: "Arm/ArmMotor",
     command: "Arm",
     kind: "arm",
     // It rests on its lower hard stop, which is also its lower soft limit, as a stowed arm does. Gravity pulls it
     // back there whenever it is driven at 0 V, so it must not be able to fall past the soft limit.
-    sim: { kind: "arm", gearing: 60, mass: 2.5, length: 0.5, minPosition: -20 * DEG, maxPosition: 110 * DEG, startingPosition: -20 * DEG },
+    sim: { kind: "arm", gearing: 60, mass: 3, length: 1, minPosition: -20 * DEG, maxPosition: 110 * DEG, startingPosition: -20 * DEG },
     softLimits: [-20, 100],
     profiled: true,
-    gains: { kP: 25, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, kG: 0.2, maxVelocity: 30, maxAcceleration: 60, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
+    gains: { kP: 150, kI: 0, kD: 30, kS: 0, kV: 0, kA: 0, kG: 0.2, maxVelocity: 30, maxAcceleration: 60, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
   },
   {
-    // No motion profile, so a big setpoint step asks for confirmation. kP in V per rotation.
+    // No motion profile, so a big setpoint step asks for confirmation. kP in V per rotation. YAMG's default turret:
+    // 15:1, kP 50 and kD 20, turning the inertia of its default 3 kg, 1 m arm (m·L²/3).
     name: "Turret/TurretMotor",
     command: "Turret",
     kind: "pivot",
-    sim: { kind: "pivot", gearing: 40, moi: 0.15, minPosition: -190 * DEG, maxPosition: 190 * DEG, startingPosition: 0 },
+    sim: { kind: "pivot", gearing: 15, moi: 1, minPosition: -190 * DEG, maxPosition: 190 * DEG, startingPosition: 0 },
     softLimits: [-170, 170],
     profiled: false,
-    gains: { kP: 40, kI: 0, kD: 0.5, kS: 0, kV: 0, kA: 0, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
+    gains: { kP: 50, kI: 0, kD: 20, kS: 0, kV: 0, kA: 0, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
   },
   {
-    // kP and kV in V/(rot/s). kV is 0 on purpose (about 0.12 holds a speed), so kP alone never reaches the setpoint.
+    // kP and kV in V/(rot/s). YAMG's default flywheel: 1:1, 0.0025 kg·m² and kP 5, here per motor, for two motors.
+    // kV is 0 on purpose (about 0.12 holds a speed), so kP alone settles a few percent short of the setpoint.
     name: "Shooter/ShooterMotor",
     command: "Shooter",
     kind: "flywheel",
-    sim: { kind: "flywheel", gearing: 1, motorCount: 2, moi: 0.004 },
+    sim: { kind: "flywheel", gearing: 1, motorCount: 2, moi: 0.005 },
     profiled: false,
-    gains: { kP: 0.05, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, statorLimit: 60, supplyLimit: 60, closedRamp: 0 },
+    gains: { kP: 5, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
   },
 ]
 
