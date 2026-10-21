@@ -1,0 +1,391 @@
+"use client"
+
+import { useEffect, useId, useRef, useState } from "react"
+import { CircleCheck, CircleDashed, Play, SkipForward, TriangleAlert, Zap } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
+import { useAxisValues, useNtValue, useRobotState, useTuner } from "@/components/tuner/tuner-context"
+import { Notice, Panel } from "@/components/tuner/panel"
+import { EditableBound } from "@/components/tuner/setpoint-panel"
+import { axisReader, formatPosition, yamsTopics } from "@/lib/yams/topics"
+import { jogParams } from "@/lib/yams/safety"
+
+const DEFAULT_MIN_VOLTS = -1
+const DEFAULT_MAX_VOLTS = 1
+/** Battery voltage: nothing above this can be applied anyway. */
+const HARD_LIMIT_VOLTS = 12
+/** Below this, friction alone can keep the mechanism still, so no direction is judged. */
+const MIN_TEST_VOLTS = 0.25
+const SEND_INTERVAL_MS = 100
+
+type Trial = "with" | "against" | null
+
+export function VoltageInversionCheck() {
+  const { mechanismName, commandName, checklistConfirmed, inversionCheck, setInversionCheck, session } = useTuner()
+  const locked =
+    !mechanismName || !commandName
+      ? "Choose a mechanism first."
+      : !checklistConfirmed
+        ? "Complete the pre-motion checklist first."
+        : null
+
+  if (!locked && inversionCheck !== "pending") {
+    return (
+      <Panel
+        step={3}
+        title="Check inversions"
+        description={
+          inversionCheck === "passed"
+            ? "Position went up in the positive direction and down in the negative direction."
+            : "Skipped. Only skip this when the motor, encoder and follower inversions were already checked on this robot."
+        }
+      >
+        <Button variant="outline" className="self-start" disabled={session !== null} onClick={() => setInversionCheck("pending")}>
+          Run the check again
+        </Button>
+      </Panel>
+    )
+  }
+
+  return (
+    <Panel
+      step={3}
+      title="Check inversions"
+      description="Confirm position goes up when the mechanism moves in its positive direction. Drive it with a small voltage while enabled. Only needed once during setup."
+      locked={locked}
+    >
+      <CheckBody key={mechanismName ?? ""} />
+    </Panel>
+  )
+}
+
+function CheckBody() {
+  const { nt, mechanismName, axis, kind, session, starting, startLiveTuning, stop, setInversionCheck } = useTuner()
+  const { position } = useAxisValues()
+  const topics = mechanismName ? yamsTopics(mechanismName) : null
+  // Subscribing re-renders when the topic is announced by a YAMS version that supports it.
+  useNtValue<boolean>(topics?.tuning.voltageEnabled ?? null)
+  const supported = !!topics && nt.isAnnounced(topics.tuning.voltageEnabled) && nt.isAnnounced(topics.tuning.voltageSetpoint)
+
+  const active = session === "voltage"
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [volts, setVolts] = useState(0)
+  const [springBack, setSpringBack] = useState(true)
+  const [minVolts, setMinVolts] = useState(DEFAULT_MIN_VOLTS)
+  const [maxVolts, setMaxVolts] = useState(DEFAULT_MAX_VOLTS)
+  const [trials, setTrials] = useState<{ positive: Trial; negative: Trial }>({ positive: null, negative: null })
+  const [warning, setWarning] = useState<string | null>(null)
+  const commanded = useRef(0)
+  const lastSent = useRef(0)
+  const springId = useId()
+
+  const send = (v: number) => {
+    if (!topics) return
+    commanded.current = v
+    nt.set(topics.tuning.voltageSetpoint, v)
+  }
+
+  const zero = () => {
+    setVolts(0)
+    send(0)
+  }
+
+  useEffect(() => {
+    if (!active) {
+      commanded.current = 0
+      setVolts(0)
+    }
+  }, [active])
+
+  // Compares the direction the mechanism moves with the sign of the commanded voltage.
+  useEffect(() => {
+    if (!active || !mechanismName) return
+    const reader = axisReader(nt, mechanismName, axis)
+    const threshold = jogParams(axis).directionThreshold
+    let trialSign = 0
+    let trialStart: number | undefined
+    let judged = false
+    const id = setInterval(() => {
+      const v = commanded.current
+      const sign = Math.abs(v) >= MIN_TEST_VOLTS ? Math.sign(v) : 0
+      const pos = reader.position()
+      if (sign !== trialSign) {
+        trialSign = sign
+        trialStart = pos
+        judged = false
+        return
+      }
+      if (sign === 0 || judged || pos === undefined || trialStart === undefined) return
+      const moved = pos - trialStart
+      if (Math.abs(moved) < threshold) return
+      judged = true
+      const result: Trial = Math.sign(moved) === sign ? "with" : "against"
+      setTrials((t) => ({ ...t, [sign > 0 ? "positive" : "negative"]: result }))
+      if (result === "against") {
+        // Back off immediately: a reversed motor or follower keeps fighting the mechanism.
+        commanded.current = 0
+        nt.set(yamsTopics(mechanismName).tuning.voltageSetpoint, 0)
+        setVolts(0)
+        setWarning(
+          `Position went ${sign > 0 ? "down with positive" : "up with negative"} voltage, so the voltage was set back to 0 V. The motor or encoder inversion is probably wrong. If gravity is pulling the mechanism, it can also be stronger than this voltage; try a little more voltage before changing inversions.`,
+        )
+      } else setWarning(null)
+    }, 20)
+    return () => clearInterval(id)
+  }, [active, mechanismName, axis, nt])
+
+  const begin = async () => {
+    setError(null)
+    setWarning(null)
+    setTrials({ positive: null, negative: null })
+    const err = await startLiveTuning("voltage")
+    if (err || !topics) {
+      setError(err)
+      return
+    }
+    commanded.current = 0
+    nt.set(topics.tuning.voltageSetpoint, 0)
+    nt.set(topics.tuning.voltageEnabled, true)
+  }
+
+  const passed = trials.positive === "with" && trials.negative === "with"
+  const format = (v: number) => `${v.toFixed(2)} V`
+  const [lowLabel, highLabel] = kind === "elevator" ? ["down", "up"] : ["reverse", "forward"]
+
+  if (!supported) {
+    return (
+      <>
+        <Notice tone="warn">
+          This robot does not publish voltage/enabled and voltage/setpoint. Update YAMS to a version with voltage live tuning, or skip this step.
+        </Notice>
+        <Button variant="ghost" className="self-start" onClick={() => setInversionCheck("skipped")}>
+          <SkipForward data-icon="inline-start" />
+          Skip inversion check
+        </Button>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div className="flex gap-3 rounded-md border border-destructive bg-destructive/10 p-3 text-sm leading-relaxed text-foreground">
+        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden />
+        <div className="flex flex-col gap-1.5">
+          <p className="font-semibold text-destructive">Be very careful during this step.</p>
+          <p>
+            Voltage runs the motor open loop, with no position control. If two motors drive the same mechanism and a follower&apos;s inversion is wrong, the
+            motors fight each other and can bend or break the mechanism almost instantly.
+          </p>
+          <ul className="flex list-disc flex-col gap-1 pl-5">
+            <li>Start with a fraction of a volt and increase it slowly.</li>
+            <li>Watch and listen. Grinding, a stalled mechanism or rising current means stop right away.</li>
+            <li>Press Space, or disable from the Driver Station, at the first sign of trouble.</li>
+          </ul>
+        </div>
+      </div>
+
+      {!active ? (
+        <div className="flex flex-col gap-3">
+          <label className="flex items-start gap-3 text-sm leading-relaxed">
+            <Checkbox checked={acknowledged} onCheckedChange={(v) => setAcknowledged(v === true)} className="mt-0.5" />
+            I am watching the mechanism, my hand is on the disable, and I will start with a very small voltage.
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={begin} disabled={!acknowledged || starting || session !== null}>
+              <Play data-icon="inline-start" />
+              Start voltage control
+            </Button>
+            <Button variant="ghost" className="ml-auto" disabled={session !== null} onClick={() => setInversionCheck("skipped")}>
+              <SkipForward data-icon="inline-start" />
+              Skip (already checked)
+            </Button>
+          </div>
+          {session !== null && <p className="text-sm text-muted-foreground">Stop the current Live Tuning session first.</p>}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">Applied voltage</span>
+            <span className="font-mono text-2xl tabular">{format(volts)}</span>
+          </div>
+          <Slider
+            aria-label="Tuning voltage"
+            min={minVolts}
+            max={maxVolts}
+            step={0.05}
+            value={Math.min(maxVolts, Math.max(minVolts, volts))}
+            onValueChange={(raw) => {
+              const v = Array.isArray(raw) ? raw[0] : (raw as number)
+              setVolts(v)
+              if (Date.now() - lastSent.current >= SEND_INTERVAL_MS) {
+                lastSent.current = Date.now()
+                send(v)
+              }
+            }}
+            onValueCommitted={(raw) => {
+              const v = Array.isArray(raw) ? raw[0] : (raw as number)
+              if (springBack) zero()
+              else {
+                setVolts(v)
+                send(v)
+              }
+            }}
+          />
+          <div className="flex items-center justify-between gap-2 font-mono text-xs text-muted-foreground tabular">
+            <EditableBound
+              label="Minimum voltage"
+              value={minVolts}
+              digits={2}
+              step={0.1}
+              format={format}
+              onSubmit={(v) => {
+                const next = Math.max(-HARD_LIMIT_VOLTS, Math.min(0, v))
+                if (next >= maxVolts) return `Minimum must be below ${format(maxVolts)}.`
+                setMinVolts(next)
+                return next !== v ? `Limited to ${format(next)}.` : null
+              }}
+            />
+            <label htmlFor={springId} className="flex items-center gap-2 font-sans">
+              <Switch id={springId} size="sm" checked={springBack} onCheckedChange={setSpringBack} />
+              {springBack ? "Back to 0 V on release" : "Holds voltage on release"}
+            </label>
+            <EditableBound
+              label="Maximum voltage"
+              value={maxVolts}
+              digits={2}
+              step={0.1}
+              format={format}
+              align="end"
+              onSubmit={(v) => {
+                const next = Math.min(HARD_LIMIT_VOLTS, Math.max(0, v))
+                if (next <= minVolts) return `Maximum must be above ${format(minVolts)}.`
+                setMaxVolts(next)
+                return next !== v ? `Limited to ${format(next)}.` : null
+              }}
+            />
+          </div>
+
+          <VoltageEntry
+            min={minVolts}
+            max={maxVolts}
+            format={format}
+            onApply={(v) => {
+              setVolts(v)
+              send(v)
+            }}
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <TrialStatus label={`Positive voltage moves ${highLabel}`} result={trials.positive} />
+            <TrialStatus label={`Negative voltage moves ${lowLabel}`} result={trials.negative} />
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {`Position ${formatPosition(position, axis)}. Apply at least ${MIN_TEST_VOLTS} V each way until the mechanism moves.`}
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={zero}>
+              <Zap data-icon="inline-start" />
+              Set 0 V
+            </Button>
+            <Button
+              className="ml-auto"
+              disabled={!passed}
+              onClick={() => {
+                stop("Inversion check passed")
+                setInversionCheck("passed")
+              }}
+            >
+              Finish check
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {warning && <Notice tone="warn">{warning}</Notice>}
+      {error && <Notice tone="danger">{error}</Notice>}
+    </>
+  )
+}
+
+function VoltageEntry({
+  min,
+  max,
+  format,
+  onApply,
+}: {
+  min: number
+  max: number
+  format: (v: number) => string
+  onApply: (v: number) => void
+}) {
+  const inputId = useId()
+  const [text, setText] = useState("")
+  const [note, setNote] = useState<string | null>(null)
+
+  const apply = () => {
+    const v = Number.parseFloat(text)
+    if (text.trim() === "" || !Number.isFinite(v)) {
+      setNote("Enter a number of volts.")
+      return
+    }
+    const next = Math.min(max, Math.max(min, v))
+    onApply(next)
+    setText(next.toString())
+    setNote(next !== v ? `Limited to ${format(next)}. Change the slider range to go further.` : `Holding ${format(next)}. Set 0 V or press Space to stop.`)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={inputId} className="text-xs uppercase tracking-wide text-muted-foreground">
+        Type a voltage
+      </label>
+      <div className="flex gap-2">
+        <Input
+          id={inputId}
+          type="number"
+          inputMode="decimal"
+          step={0.05}
+          min={min}
+          max={max}
+          placeholder={`${min} to ${max}`}
+          value={text}
+          className="font-mono tabular"
+          onChange={(e) => {
+            setText(e.target.value)
+            setNote(null)
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return
+            e.preventDefault()
+            apply()
+          }}
+        />
+        <Button variant="outline" onClick={apply}>
+          Apply
+        </Button>
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {note ?? `Press Enter or Apply to send it. Typed values hold until changed and stay within ${format(min)} to ${format(max)}.`}
+      </p>
+    </div>
+  )
+}
+
+function TrialStatus({ label, result }: { label: string; result: Trial }) {
+  const Icon = result === "with" ? CircleCheck : result === "against" ? TriangleAlert : CircleDashed
+  return (
+    <div
+      className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm data-[result=against]:border-hazard data-[result=against]:bg-hazard/15 data-[result=with]:border-foreground"
+      data-result={result ?? "none"}
+    >
+      <Icon className="size-4 shrink-0" aria-hidden />
+      <span>{label}</span>
+      <span className="sr-only">{result === "with" ? "confirmed" : result === "against" ? "wrong direction" : "not tested yet"}</span>
+    </div>
+  )
+}
