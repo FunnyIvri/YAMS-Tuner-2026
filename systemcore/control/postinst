@@ -1,4 +1,6 @@
 #!/bin/sh
+PACKAGE_NAME="yams-tuner"
+
 echo "Setting up socket activation for $PACKAGE_NAME"
 
 # Clean up anything left running by a previous version
@@ -22,7 +24,7 @@ fi
 sleep 1
 
 if systemctl is-active --quiet "$PACKAGE_NAME.socket"; then
-    echo "$PACKAGE_NAME is listening on port ${PORT}"
+    echo "$PACKAGE_NAME is listening on port 5812"
 else
     echo "Socket failed to activate"
     systemctl status "$PACKAGE_NAME.socket" --no-pager || true

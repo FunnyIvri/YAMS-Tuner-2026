@@ -63,7 +63,7 @@ Press **Download IPK** on https://tuning.yassrobotics.com/ for `yams-tuner_<vers
 
 The package is built by the **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) with [opkg-build](https://git.yoctoproject.org/opkg-utils/) from opkg-utils. It builds the site with `NEXT_PUBLIC_SYSTEMCORE=1` and no base path, stages it under `/usr/share/yams-tuner/www` with the files in `systemcore/`, and packs it. To get a package from a branch, push it or open a pull request and download the `yams-tuner-ipk` artifact from the run.
 
-Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, `overlay/` holds the files installed onto the device (systemd units and `server.py`), and `assets/icon.png` is the 845x480 tile shown in the SystemCore UI. `${PACKAGE_NAME}`, `${VERSION}` and `${PORT}` in file names and contents are filled in by the workflow with `envsubst`, from its `PACKAGE_NAME` and `PORT` settings and the package version.
+Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, `overlay/` holds the files installed onto the device (systemd units and `server.py`), and `assets/icon.png` is the 845x480 tile shown in the SystemCore UI. The workflow fills in `${VERSION}` in `control/control` with the package version.
 
 ## Project layout
 

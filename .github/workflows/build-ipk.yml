@@ -26,9 +26,6 @@ permissions:
   contents: read
 
 env:
-  PACKAGE_NAME: yams-tuner
-  # The port the web UI listens on
-  PORT: 5812
   OPKG_UTILS_VERSION: 0.7.0
   OPKG_BUILD_SHA256: bbd597c015202d6e959888571f56acf1c4e93f2a7bb88e448fabccbea78fb4db
 
@@ -68,7 +65,7 @@ jobs:
           fi
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "file=${PACKAGE_NAME}_${VERSION}.ipk" >> "$GITHUB_OUTPUT"
+          echo "file=yams-tuner_${VERSION}.ipk" >> "$GITHUB_OUTPUT"
 
       - name: Install opkg-build
         run: |
@@ -87,34 +84,24 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
 
       # opkg-build takes the control files from CONTROL/ and leaves that folder out of the installed files
-      - name: Fill in the package files
+      - name: Copy the package files
+        run: |
+          mkdir -p "$PKG_DIR/usr/share/yams-tuner"
+          cp -r systemcore/overlay/. "$PKG_DIR"
+          cp -r systemcore/control "$PKG_DIR/CONTROL"
+          cp -r out "$PKG_DIR/usr/share/yams-tuner/www"
+          cp systemcore/assets/icon.png "$PKG_DIR/usr/share/yams-tuner.png"
+
+      - name: Set the package version
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # Copies a folder, filling in ${PACKAGE_NAME}, ${VERSION} and ${PORT} in file names and contents.
-          # Only these are replaced, so the install scripts' other shell variables are left alone.
-          vars='${PACKAGE_NAME} ${VERSION} ${PORT}'
-          render() {
-            ( cd "$1" && find . -type f ) | while read -r rel; do
-              target="$2/$(envsubst "$vars" <<< "$rel")"
-              mkdir -p "$(dirname "$target")"
-              envsubst "$vars" < "$1/$rel" | tr -d '\r' > "$target"
-            done
-          }
-          render systemcore/overlay "$PKG_DIR"
-          render systemcore/control "$PKG_DIR/CONTROL"
-
-      - name: Add the website and icon
-        run: |
-          mkdir -p "$PKG_DIR/usr/share/$PACKAGE_NAME"
-          cp -r out "$PKG_DIR/usr/share/$PACKAGE_NAME/www"
-          cp systemcore/assets/icon.png "$PKG_DIR/usr/share/$PACKAGE_NAME.png"
+        run: envsubst '${VERSION}' < systemcore/control/control > "$PKG_DIR/CONTROL/control"
 
       - name: Set permissions
         run: |
           find "$PKG_DIR" -type d -exec chmod 755 {} +
           find "$PKG_DIR" -type f -exec chmod 644 {} +
-          chmod 755 "$PKG_DIR/usr/local/bin/$PACKAGE_NAME/server.py" \
+          chmod 755 "$PKG_DIR/usr/local/bin/yams-tuner/server.py" \
             "$PKG_DIR/CONTROL/postinst" "$PKG_DIR/CONTROL/prerm" "$PKG_DIR/CONTROL/postrm"
 
       - name: Build IPK

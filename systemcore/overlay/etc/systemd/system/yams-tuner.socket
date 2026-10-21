@@ -1,8 +1,8 @@
 [Unit]
-Description=${PACKAGE_NAME} socket
+Description=yams-tuner socket
 
 [Socket]
-ListenStream=${PORT}
+ListenStream=5812
 Accept=no
 NoDelay=true
 KeepAlive=true
