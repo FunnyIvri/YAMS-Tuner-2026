@@ -9,6 +9,7 @@ import { SetpointPanel } from "@/components/tuner/setpoint-panel"
 import { VoltageInversionCheck } from "@/components/tuner/voltage-inversion-check"
 import { GainsPanel } from "@/components/tuner/gains-panel"
 import { TelemetryPanel } from "@/components/tuner/telemetry-panel"
+import { VersionFooter } from "@/components/tuner/version-footer"
 
 export default function Page() {
   return (
@@ -17,14 +18,14 @@ export default function Page() {
       <DemoControls />
       <div aria-hidden className="yass-stripe" />
       <StopBar />
-      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-6 lg:grid-cols-2">
+      <main className="mx-auto grid max-w-7xl gap-4 px-4 pt-6 pb-12 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
           <MechanismPanel />
           <SafetyChecklist />
           <VoltageInversionCheck />
           <RangeVerification />
         </div>
-        <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start">
+        <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-8rem)] lg:self-start">
           <div className="shrink-0">
             <TelemetryPanel />
           </div>
@@ -34,6 +35,7 @@ export default function Page() {
           </div>
         </div>
       </main>
+      <VersionFooter />
     </TunerProvider>
   )
 }
