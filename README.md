@@ -4,6 +4,8 @@ A browser tool for safely live tuning [YAMS](https://github.com/Yet-Another-Soft
 
 **Live site:** https://tuning.yassrobotics.com/
 
+![The YAMS Live Tuner tuning an elevator in demo mode: the setpoint steps and the measured position following it on the telemetry chart](docs/images/live-tuning.png)
+
 ## Features
 
 - Connects to a robot by team number, to the simulator on `localhost`, or to a custom host.
@@ -24,6 +26,20 @@ A browser tool for safely live tuning [YAMS](https://github.com/Yet-Another-Soft
 The page is served over HTTPS but talks to the robot with `ws://`. Chromium based browsers allow this for local network addresses, and may show a prompt asking for permission to access devices on your local network. If the connection fails, try Chrome or Edge, or run the tuner locally.
 
 **Always keep a hand on the Driver Station disable button while tuning.**
+
+### Screenshots
+
+Before anything is tuned, the inversion check drives the mechanism with a small voltage to confirm that positive voltage moves it in the positive direction:
+
+![The inversion check, applying -1 V to the elevator with a warning about driving it open loop](docs/images/inversion-check.png)
+
+Range verification then drives it to each end of its travel, so setpoints can be limited to a range that has been proven:
+
+![Range verification, holding the drive up button at 3 V while the elevator rises](docs/images/range-verification.png)
+
+On a phone or tablet in landscape, the telemetry sits beside the setpoint controls, and the stop button is on the other side of the screen from Send:
+
+![The tuner on an iPhone in landscape, holding an arm at 70 degrees](docs/images/phone-landscape.png)
 
 ## Demo mode
 
