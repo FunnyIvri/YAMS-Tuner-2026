@@ -185,7 +185,7 @@ function PositionControl() {
         />
         <div className="flex flex-wrap gap-2">
           {presets.map((p) => (
-            <Button key={p.label} size="sm" variant="outline" onClick={() => send(p.value)}>
+            <Button key={p.label} size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => send(p.value)}>
               {p.label}
             </Button>
           ))}
@@ -322,11 +322,11 @@ function VelocityControl() {
           onCommit={send}
         />
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => send(0)}>
+          <Button size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => send(0)}>
             Idle (0)
           </Button>
           {steps.map((s) => (
-            <Button key={s} size="sm" variant="outline" onClick={() => send(s)}>
+            <Button key={s} size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => send(s)}>
               {`${s} RPM`}
             </Button>
           ))}

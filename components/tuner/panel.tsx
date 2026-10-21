@@ -81,11 +81,11 @@ export function NativeSelect({ className, children, ...props }: SelectHTMLAttrib
 
 export function Readout({ label, value, tone }: { label: string; value: ReactNode; tone?: "warn" | "danger" }) {
   return (
-    <div className="flex flex-col gap-0.5 rounded-md border border-border bg-background px-3 py-2">
-      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+    <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-background px-3 py-2 short:px-1.5 short:py-1">
+      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground short:truncate short:text-[10px]">{label}</span>
       <span
         className={cn(
-          "font-mono text-base font-bold tabular text-primary",
+          "font-mono text-base font-bold tabular text-primary short:whitespace-nowrap short:text-[min(0.875rem,2vw)]",
           tone === "danger" && "text-destructive",
           tone === "warn" && "underline decoration-hazard decoration-2 underline-offset-4",
         )}

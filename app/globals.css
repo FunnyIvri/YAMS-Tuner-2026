@@ -3,6 +3,10 @@
 @import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* A phone turned sideways: a touch screen in landscape with little height. The telemetry is pinned beside the controls. */
+@custom-variant short (@media (orientation: landscape) and (max-height: 540px) and (pointer: coarse));
+/* Any touch screen in landscape, phone or tablet: the controls are on the right. */
+@custom-variant touch-landscape (@media (orientation: landscape) and (pointer: coarse));
 
 @theme inline {
   --font-sans: var(--font-inter), 'Inter', ui-sans-serif, system-ui, sans-serif;

@@ -24,7 +24,8 @@ export function StopBar() {
     <div className="sticky top-0 z-40 border-b border-border">
       {active && <div aria-hidden className="hazard-stripes h-1.5" />}
       <div className={cn("transition-colors", active ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground")}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5">
+        {/* On a touch screen in landscape the controls are on the right, so Stop goes on the left, away from Send. */}
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5 touch-landscape:flex-row-reverse short:px-3 short:py-1">
           <div aria-live="polite" className="min-w-0 text-sm leading-relaxed">
             {active ? (
               <p className="truncate">
@@ -73,7 +74,7 @@ export function StopBar() {
             onClick={() => stop("Stopped with the Stop button")}
             disabled={!active}
             className={cn(
-              "flex h-11 shrink-0 items-center gap-2 rounded-md px-4 font-mono text-sm font-semibold uppercase tracking-wider transition-colors",
+              "flex h-11 shrink-0 items-center gap-2 rounded-md px-4 short:h-10 font-mono text-sm font-semibold uppercase tracking-wider transition-colors",
               "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-3 focus-visible:ring-ring/50 outline-none",
               "disabled:bg-muted disabled:text-muted-foreground",
             )}

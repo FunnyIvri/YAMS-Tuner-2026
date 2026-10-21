@@ -17,9 +17,10 @@ export function TelemetryPanel() {
   return (
     <Panel
       title="Telemetry"
+      className="short:h-full short:[&>div]:min-h-0 short:[&>div]:flex-1 short:[&>div]:gap-2 short:[&>div]:p-2.5 short:[&>header]:hidden"
       locked={status !== "connected" || !mechanismName ? "Live position, setpoint and current appear here." : null}
     >
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 short:grid-cols-4 short:gap-1.5">
         <Readout label="Position" value={kind === "flywheel" ? "—" : formatPosition(position, axis)} />
         <Readout label={`Velocity (${velocityUnit(axis)})`} value={formatNumber(velocity, axis === "linear" ? 3 : 0)} />
         <Readout
@@ -30,7 +31,7 @@ export function TelemetryPanel() {
         <Readout label="Output (V)" value={formatNumber(typeof volts === "number" ? volts : undefined, 2)} />
       </div>
       <Chart />
-      <p className="font-mono text-xs text-muted-foreground">
+      <p className="font-mono text-xs text-muted-foreground short:hidden">
         {`Motor temp ${typeof temp === "number" ? `${temp.toFixed(0)} °C` : "—"}`}
       </p>
     </Panel>
@@ -199,14 +200,14 @@ function Chart() {
   }, [])
 
   return (
-    <figure className="flex flex-col gap-2">
+    <figure className="flex flex-col gap-2 short:min-h-0 short:flex-1 short:gap-1">
       <canvas
         ref={canvasRef}
-        className="h-56 w-full rounded-md border border-border bg-background"
+        className="h-56 w-full rounded-md border border-border bg-background short:h-0 short:min-h-16 short:flex-1"
         role="img"
         aria-label="Measured value, setpoint and stator current over the last 10 seconds"
       />
-      <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground short:gap-x-2.5 short:text-[10px]">
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="h-0.5 w-4 bg-foreground" />
           Measured
