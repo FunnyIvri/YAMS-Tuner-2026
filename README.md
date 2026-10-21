@@ -25,6 +25,19 @@ The page is served over HTTPS but talks to the robot with `ws://`. Chromium base
 
 **Always keep a hand on the Driver Station disable button while tuning.**
 
+## Demo mode
+
+Pick **Demo (no robot)** and press **Start demo**, or open the site with `?demo` (for example https://tuning.yassrobotics.com/?demo), to try the tuner without a robot or a simulation. A simulated robot runs in the page with four YAMS mechanisms: an elevator, an arm, a turret with no motion profile, and a two-motor shooter flywheel. Their physics come from [YAMG](https://github.com/Yet-Another-Software-Suite/yamg)'s simulation: NEO motors with stator and supply current limits, gravity, hard stops and battery sag.
+
+The demo bar under the header stands in for the Driver Station: pick the mode, enable or disable the robot, and reset it. It can also break the robot on purpose, so the safety checks can be tried:
+
+- **Elevator motor wired backwards**: the inversion check sees the elevator move the wrong way.
+- **Arm blocked at 45°**: range verification and Live Tuning run into it.
+
+The elevator's and arm's kG, and the flywheel's kV, start too low, so there is something to tune.
+
+Demo mode is only on the hosted site. The SystemCore package is built without it.
+
 ## Development
 
 Requires Node.js 22 and pnpm (the version is pinned in `package.json`; `corepack enable` picks it up automatically).
@@ -67,6 +80,7 @@ Package sources live in `systemcore/`: `control/` holds the package metadata and
 | `components/tuner/` | Tuner panels: connection, checklist, range verification, setpoints, gains, telemetry |
 | `components/ui/` | shadcn/ui components |
 | `lib/nt/` | NetworkTables 4 client built on FRC Web Components |
+| `lib/demo/` | Demo mode: the simulated robot, and the physics ported from YAMG |
 | `lib/yams/` | YAMS topic names and safety limits |
 | `systemcore/` | SystemCore package sources and `build-ipk.sh` |
 
