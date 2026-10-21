@@ -15,6 +15,7 @@ export default function Page() {
     <TunerProvider>
       <ConnectionBar />
       <DemoControls />
+      <div aria-hidden className="yass-stripe" />
       <StopBar />
       <main className="mx-auto grid max-w-7xl gap-4 px-4 py-6 lg:grid-cols-2">
         <div className="flex flex-col gap-4">

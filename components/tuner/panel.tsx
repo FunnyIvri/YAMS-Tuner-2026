@@ -20,14 +20,14 @@ export function Panel({
   className?: string
 }) {
   return (
-    <section className={cn("flex flex-col rounded-lg border border-border bg-card text-card-foreground", className)}>
+    <section className={cn("flex flex-col rounded-sm border border-l-[3px] border-border border-l-sapphire bg-card text-card-foreground", className)}>
       <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
         <div className="flex items-start gap-3">
           {step !== undefined && (
             <span
               aria-hidden
               className={cn(
-                "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-sm font-mono text-xs font-semibold",
+                "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-sm font-mono text-xs font-bold",
                 locked ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground",
               )}
             >
@@ -35,7 +35,7 @@ export function Panel({
             </span>
           )}
           <div className="flex flex-col gap-0.5">
-            <h2 className="text-sm font-semibold leading-6">
+            <h2 className="text-lg font-bold leading-6">
               {step !== undefined && <span className="sr-only">{`Step ${step}: `}</span>}
               {title}
             </h2>
@@ -56,7 +56,7 @@ export function Panel({
 export function Field({ label, htmlFor, hint, children }: { label: string; htmlFor?: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <label htmlFor={htmlFor} className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
         {label}
       </label>
       {children}
@@ -69,7 +69,7 @@ export function NativeSelect({ className, children, ...props }: SelectHTMLAttrib
   return (
     <select
       className={cn(
-        "h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+        "h-9 w-full rounded-sm border border-input bg-background px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
         className,
       )}
       {...props}
@@ -82,10 +82,10 @@ export function NativeSelect({ className, children, ...props }: SelectHTMLAttrib
 export function Readout({ label, value, tone }: { label: string; value: ReactNode; tone?: "warn" | "danger" }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-md border border-border bg-background px-3 py-2">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
       <span
         className={cn(
-          "font-mono text-base font-medium tabular",
+          "font-mono text-base font-bold tabular text-primary",
           tone === "danger" && "text-destructive",
           tone === "warn" && "underline decoration-hazard decoration-2 underline-offset-4",
         )}

@@ -1,13 +1,18 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google'
+import { Courier_Prime, Inter, JetBrains_Mono, Press_Start_2P } from 'next/font/google'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import './globals.css'
 
-const _plexSans = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600', '700'] })
+// The YASS website's fonts.
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '700'], variable: '--font-jetbrains-mono' })
+const courierPrime = Courier_Prime({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-courier-prime' })
+const pressStart = Press_Start_2P({ subsets: ['latin'], weight: '400', variable: '--font-press-start' })
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
-const _plexMono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'] })
+/** Dark by default. Before the first paint, switch to light only if this browser chose it with the toggle. */
+const themeScript = `try{if(localStorage.getItem("theme")==="light")document.documentElement.classList.remove("dark")}catch(e){}`
 
 export const metadata: Metadata = {
   title: 'YAMS Live Tuner — safe live tuning for FRC mechanisms',
@@ -24,8 +29,8 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'light',
-  themeColor: '#e6e7e3',
+  colorScheme: 'light dark',
+  themeColor: '#17191c',
 }
 
 export default function RootLayout({
@@ -34,7 +39,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="bg-background">
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrainsMono.variable} ${courierPrime.variable} ${pressStart.variable} dark bg-background`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="font-sans antialiased">
         <TooltipProvider>{children}</TooltipProvider>
         {process.env.VERCEL && <Analytics />}

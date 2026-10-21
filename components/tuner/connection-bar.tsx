@@ -8,6 +8,7 @@ import { useRobotState, useTuner } from "@/components/tuner/tuner-context"
 import { NativeSelect } from "@/components/tuner/panel"
 import { IpkDownload } from "@/components/tuner/ipk-download"
 import { GitHubLink } from "@/components/tuner/github-link"
+import { ThemeToggle } from "@/components/tuner/theme-toggle"
 import yamsLogo from "@/components/tuner/yams-logo.png"
 import { cn } from "@/lib/utils"
 import { DEMO_HOST } from "@/lib/demo/host"
@@ -41,17 +42,20 @@ export function ConnectionBar() {
   const connected = status === "connected"
 
   return (
-    <header className="border-b border-border bg-card">
+    <header className="border-b border-border bg-background/90 backdrop-blur-sm">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
-          <img src={yamsLogo.src} alt="" aria-hidden width={42} height={28} className="h-7 w-auto shrink-0" />
-          <div className="flex flex-col">
-            <h1 className="font-mono text-sm font-semibold uppercase tracking-wider">YAMS Live Tuner</h1>
-            <p className="text-xs text-muted-foreground">Elevators, arms, pivots and flywheels over NT4</p>
+          <img src={yamsLogo.src} alt="" aria-hidden width={42} height={28} className="h-9 w-auto shrink-0" />
+          <div className="flex flex-col gap-1.5">
+            <h1 className="font-pixel text-xs leading-none tracking-wide text-primary uppercase">YAMS Live Tuner</h1>
+            <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+              Elevators, arms, pivots and flywheels over NT4
+            </p>
           </div>
           <div className="ml-auto flex items-center gap-1 lg:ml-2">
             <IpkDownload />
             <GitHubLink />
+            <ThemeToggle />
           </div>
         </div>
 
@@ -120,12 +124,12 @@ export function ConnectionBar() {
             </Button>
           )}
 
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs">
+          <div className="flex items-center gap-2 rounded-sm border border-border bg-card px-2.5 py-1 font-mono text-xs uppercase tracking-wider">
             <span
               aria-hidden
               className={cn(
                 "size-2 rounded-full",
-                connected ? "bg-foreground" : status === "connecting" ? "animate-pulse bg-hazard" : "bg-border",
+                connected ? "bg-primary" : status === "connecting" ? "animate-pulse bg-hazard" : "bg-border",
               )}
             />
             <span>
