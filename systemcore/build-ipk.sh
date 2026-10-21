@@ -39,7 +39,7 @@ echo "Building $IPK_NAME (port $PORT)"
 # 1. Build the static site. On SystemCore it is served from "/", so no base path.
 if [ "$SKIP_SITE_BUILD" = false ]; then
   echo "Building website..."
-  (cd "$REPO_ROOT" && NEXT_PUBLIC_BASE_PATH="" NEXT_TELEMETRY_DISABLED=1 pnpm build)
+  (cd "$REPO_ROOT" && NEXT_PUBLIC_BASE_PATH="" NEXT_PUBLIC_SYSTEMCORE=1 NEXT_TELEMETRY_DISABLED=1 pnpm build)
 fi
 [ -f "$REPO_ROOT/out/index.html" ] || { echo "out/index.html not found; build the site first" >&2; exit 1; }
 

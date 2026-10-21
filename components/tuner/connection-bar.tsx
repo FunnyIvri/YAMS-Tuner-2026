@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useRobotState, useTuner } from "@/components/tuner/tuner-context"
 import { NativeSelect } from "@/components/tuner/panel"
+import { IpkDownload } from "@/components/tuner/ipk-download"
 import { cn } from "@/lib/utils"
 import type { LiveTarget } from "@/lib/nt/live-nt"
 
@@ -35,6 +36,9 @@ export function ConnectionBar() {
           <div className="flex flex-col">
             <h1 className="font-mono text-sm font-semibold uppercase tracking-wider">YAMS Live Tuner</h1>
             <p className="text-xs text-muted-foreground">Elevators, arms, pivots and flywheels over NT4</p>
+          </div>
+          <div className="ml-auto lg:ml-2">
+            <IpkDownload />
           </div>
         </div>
 
