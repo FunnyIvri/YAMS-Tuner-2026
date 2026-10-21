@@ -20,7 +20,7 @@ export function Panel({
   className?: string
 }) {
   return (
-    <section className={cn("flex flex-col rounded-sm border border-l-[3px] border-border border-l-sapphire bg-card text-card-foreground", className)}>
+    <section className={cn("flex flex-col rounded-sm border border-l-[3px] border-border border-l-primary bg-card text-card-foreground", className)}>
       <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
         <div className="flex items-start gap-3">
           {step !== undefined && (
