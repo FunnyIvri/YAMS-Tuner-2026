@@ -13,7 +13,7 @@ PREV_TAG="${3:-}"
 REPO="${GITHUB_REPOSITORY:-Yet-Another-Software-Suite/YAMS-Tuner}"
 SERVER="${GITHUB_SERVER_URL:-https://github.com}"
 REPO_URL="$SERVER/$REPO"
-PAGES_URL="https://$(echo "${REPO%%/*}" | tr '[:upper:]' '[:lower:]').github.io/${REPO#*/}/"
+SITE_URL="${SITE_URL:-https://tuning.yassrobotics.com/}"
 
 IPK_NAME="$(basename "$IPK_PATH")"
 IPK_SHA256="$(sha256sum "$IPK_PATH" | cut -d' ' -f1)"
@@ -67,7 +67,7 @@ To uninstall: \`opkg remove yams-tuner\`
 
 ## Use without installing
 
-The latest build of the tuner is always hosted at $PAGES_URL. It needs a Chromium based browser (Chrome or Edge) to reach the robot from an HTTPS page.
+The latest build of the tuner is always hosted at $SITE_URL. It needs a Chromium based browser (Chrome or Edge) to reach the robot from an HTTPS page.
 
 ## Checksum
 

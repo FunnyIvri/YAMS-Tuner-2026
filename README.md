@@ -2,7 +2,7 @@
 
 A browser tool for safely live tuning [YAMS](https://github.com/Yet-Another-Software-Suite/YAMS) mechanisms (elevators, arms, pivots and flywheels) on FRC robots over NetworkTables 4.
 
-**Live site:** https://yet-another-software-suite.github.io/YAMS-Tuner/
+**Live site:** https://tuning.yassrobotics.com/
 
 ## Features
 
@@ -77,6 +77,8 @@ Every push to `main` builds the site as a static export and publishes it to GitH
 One-time setup: in the repository on GitHub, go to **Settings > Pages** and set **Source** to **GitHub Actions**.
 
 The workflow sets `NEXT_PUBLIC_BASE_PATH` to the Pages subpath (for example `/YAMS-Tuner`) so links and assets resolve correctly. Local builds leave it empty and serve from `/`.
+
+https://tuning.yassrobotics.com/ is an nginx reverse proxy in front of the GitHub Pages site (https://yet-another-software-suite.github.io/YAMS-Tuner/). It serves the tuner from `/` and passes the `/YAMS-Tuner/` asset paths through, so every Pages deploy shows up there with no extra step.
 
 The **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) builds the `.ipk` on every push and pull request and uploads it as a workflow artifact.
 
