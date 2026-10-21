@@ -26,9 +26,10 @@ permissions:
   contents: read
 
 env:
-  # opkg-build comes from opkg-utils. To update it, pick the newest tag at
-  # https://git.yoctoproject.org/opkg-utils/refs/tags and set its checksum, from:
-  #   curl -fsSL "https://git.yoctoproject.org/opkg-utils/plain/opkg-build?h=<tag>" | sha256sum
+  # opkg-build comes from opkg-utils, from the Yocto Project: https://git.yoctoproject.org/opkg-utils/
+  # Releases: https://git.yoctoproject.org/opkg-utils/refs/tags
+  # opkg-build's changes (opkg-utils has no changelog): https://git.yoctoproject.org/opkg-utils/log/opkg-build
+  # To update, set the release's tag and the SHA-256 of its opkg-build.
   OPKG_UTILS_VERSION: 0.7.0
   OPKG_BUILD_SHA256: bbd597c015202d6e959888571f56acf1c4e93f2a7bb88e448fabccbea78fb4db
 
