@@ -46,7 +46,7 @@ pnpm build
 
 The tuner can be installed on SystemCore as a package, so it is served from the robot itself at `http://<systemcore>:5812/`. A web server starts on the first request (socket activation) and serves the static site.
 
-Download `yams-tuner_<version>.ipk` from the [latest release](https://github.com/Yet-Another-Software-Suite/YAMS-Tuner/releases/latest), or from the **Build SystemCore IPK** workflow run artifacts, and install it through SystemCore's package manager.
+Download `yams-tuner_<version>.ipk` from the [latest release](https://github.com/Yet-Another-Software-Suite/YAMS-Tuner/releases/latest), or from the **Build SystemCore IPK** workflow run artifacts. Open the SystemCore web interface at http://robot.local and drag the `.ipk` onto the home page or the **Package Manager** tab.
 
 To build the package yourself (Linux or WSL, needs `tar`, `ar` and `gzip`):
 
@@ -78,4 +78,6 @@ One-time setup: in the repository on GitHub, go to **Settings > Pages** and set 
 
 The workflow sets `NEXT_PUBLIC_BASE_PATH` to the Pages subpath (for example `/YAMS-Tuner`) so links and assets resolve correctly. Local builds leave it empty and serve from `/`.
 
-The **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) builds the `.ipk` on every push and pull request and uploads it as a workflow artifact. Pushing a tag such as `v1.0.0` also creates a GitHub release with the `.ipk` attached, using the tag as the package version.
+The **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) builds the `.ipk` on every push and pull request and uploads it as a workflow artifact.
+
+To publish a release, open **Actions > Release > Run workflow** and enter a version such as `1.2.0`. The **Release** workflow (`.github/workflows/release.yml`) builds the `.ipk` with that version, tags the commit as `v1.2.0`, and creates a GitHub release with the `.ipk` attached. The release description lists the commits since the previous release, install steps for SystemCore and the file's SHA-256 checksum (see `.github/scripts/release-notes.sh`).
