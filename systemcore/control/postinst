@@ -1,0 +1,35 @@
+#!/bin/sh
+PACKAGE_NAME="@PACKAGE@"
+
+echo "Setting up socket activation for $PACKAGE_NAME"
+
+# Clean up anything left running by a previous version
+systemctl stop "$PACKAGE_NAME.service" 2>/dev/null || true
+systemctl stop "$PACKAGE_NAME.socket" 2>/dev/null || true
+systemctl disable "$PACKAGE_NAME.service" 2>/dev/null || true
+systemctl daemon-reload
+
+# Only the socket is enabled; systemd starts the service on the first request
+if ! systemctl enable "$PACKAGE_NAME.socket"; then
+    echo "Failed to enable socket unit"
+    exit 1
+fi
+
+if ! systemctl start "$PACKAGE_NAME.socket"; then
+    echo "Failed to start socket"
+    systemctl status "$PACKAGE_NAME.socket" --no-pager || true
+    exit 1
+fi
+
+sleep 1
+
+if systemctl is-active --quiet "$PACKAGE_NAME.socket"; then
+    echo "$PACKAGE_NAME is listening on port @PORT@"
+else
+    echo "Socket failed to activate"
+    systemctl status "$PACKAGE_NAME.socket" --no-pager || true
+    journalctl -u "$PACKAGE_NAME.socket" --no-pager -n 10 || true
+    exit 1
+fi
+
+exit 0

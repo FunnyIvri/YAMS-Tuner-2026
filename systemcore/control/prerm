@@ -1,0 +1,10 @@
+#!/bin/sh
+PACKAGE_NAME="@PACKAGE@"
+
+echo "Stopping $PACKAGE_NAME"
+
+systemctl stop "$PACKAGE_NAME.socket" 2>/dev/null || true
+systemctl stop "$PACKAGE_NAME.service" 2>/dev/null || true
+systemctl disable "$PACKAGE_NAME.socket" 2>/dev/null || true
+
+exit 0

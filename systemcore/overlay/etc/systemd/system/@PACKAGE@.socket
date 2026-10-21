@@ -1,0 +1,11 @@
+[Unit]
+Description=@PACKAGE@ socket
+
+[Socket]
+ListenStream=@PORT@
+Accept=no
+NoDelay=true
+KeepAlive=true
+
+[Install]
+WantedBy=sockets.target

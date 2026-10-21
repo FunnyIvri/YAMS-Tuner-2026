@@ -19,3 +19,4 @@ node_modules
 # Next.js build output
 out/
 next-env.d.ts
+dist/

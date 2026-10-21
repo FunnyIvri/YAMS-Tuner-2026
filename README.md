@@ -42,6 +42,23 @@ To produce the static site in `out/`:
 pnpm build
 ```
 
+## Running on SystemCore
+
+The tuner can be installed on SystemCore as a package, so it is served from the robot itself at `http://<systemcore>:5812/`. A web server starts on the first request (socket activation) and serves the static site.
+
+Download `yams-tuner_<version>.ipk` from the [latest release](https://github.com/Yet-Another-Software-Suite/YAMS-Tuner/releases/latest), or from the **Build SystemCore IPK** workflow run artifacts, and install it through SystemCore's package manager.
+
+To build the package yourself (Linux or WSL, needs `tar`, `ar` and `gzip`):
+
+```bash
+pnpm install
+systemcore/build-ipk.sh
+```
+
+The `.ipk` is written to `dist/`. Set `PORT`, `VERSION` or `PACKAGE_NAME` to override the defaults, and pass `--skip-site-build` to reuse an existing `out/` folder (it must be built without `NEXT_PUBLIC_BASE_PATH`).
+
+Package sources live in `systemcore/`: `control/` holds the package metadata and install scripts, and `overlay/` holds the files installed onto the device (systemd units and `server.py`). `@PACKAGE@`, `@VERSION@` and `@PORT@` placeholders are filled in at build time.
+
 ## Project layout
 
 | Path | Contents |
@@ -51,6 +68,7 @@ pnpm build
 | `components/ui/` | shadcn/ui components |
 | `lib/nt/` | NetworkTables 4 client built on FRC Web Components |
 | `lib/yams/` | YAMS topic names and safety limits |
+| `systemcore/` | SystemCore package sources and `build-ipk.sh` |
 
 ## Deployment
 
@@ -59,3 +77,5 @@ Every push to `main` builds the site as a static export and publishes it to GitH
 One-time setup: in the repository on GitHub, go to **Settings > Pages** and set **Source** to **GitHub Actions**.
 
 The workflow sets `NEXT_PUBLIC_BASE_PATH` to the Pages subpath (for example `/YAMS-Tuner`) so links and assets resolve correctly. Local builds leave it empty and serve from `/`.
+
+The **Build SystemCore IPK** workflow (`.github/workflows/build-ipk.yml`) builds the `.ipk` on every push and pull request and uploads it as a workflow artifact. Pushing a tag such as `v1.0.0` also creates a GitHub release with the `.ipk` attached, using the tag as the package version.
