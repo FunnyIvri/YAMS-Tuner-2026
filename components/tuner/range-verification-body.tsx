@@ -32,6 +32,8 @@ const SLOW_ZONE_TOLERANCES = 8
 /** How fast the voltage ramps down to 0 after a drive button is released, in ramp mode, in volts per second. */
 const DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND = 4
 const MIN_RAMP_DOWN_VOLTS_PER_SECOND = 0.01
+/** Lowering the ramp rate while the mechanism still goes up stops at this many decimal places. */
+const MAX_RAMP_RATE_DECIMALS = 6
 /** How often the drive and the ramp down send a voltage. */
 const LOOP_MS = 20
 /** Holding with the closed loop: moving this far from the hold position at any time means it is running away. */
@@ -463,10 +465,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     timer.current = null
     holdAt.current = null
     const t = yamsTopics(mechanismName)
-    // While it is still going up, the rate drops by the last digit of the rate entered every loop, but never to 0, so
-    // the ramp always finishes. Only for this ramp: the next release starts from the entered rate.
-    const decimals = leastDigitDecimals(rampDownRate)
-    const rateStep = 10 ** -decimals
+    // While it is still going up, the rate drops by its last digit every loop. Rather than reach 0 it goes a digit
+    // further (0.1 to 0.09), so the ramp always finishes. Only for this ramp: the next release starts from the entered rate.
+    let decimals = leastDigitDecimals(rampDownRate)
     let rate = rampDownRate
     let lastPos = reader.position()
     let out = start
@@ -483,9 +484,13 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         endDrive()
         return
       }
-      if (pos !== undefined && lastPos !== undefined && pos > lastPos && rate > rateStep) {
-        rate = Math.max(rateStep, Number((rate - rateStep).toFixed(decimals)))
-        setRampRateNow(rate)
+      if (pos !== undefined && lastPos !== undefined && pos > lastPos) {
+        if (rate <= 10 ** -decimals && decimals < MAX_RAMP_RATE_DECIMALS) decimals++
+        const next = Number((rate - 10 ** -decimals).toFixed(decimals))
+        if (next > 0) {
+          rate = next
+          setRampRateNow(rate)
+        }
       }
       lastPos = pos
       const step = (rate * LOOP_MS) / 1000
@@ -1040,7 +1045,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       </div>
       {release === "ramp" && (
         <p className={`text-xs leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
-          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. While it is still going up, the rate drops by ${10 ** -leastDigitDecimals(rampDownRate)} V/s every ${LOOP_MS} ms, the last digit of the rate entered, but never below that.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. While it is still going up, the rate drops by its last digit every ${LOOP_MS} ms (${10 ** -leastDigitDecimals(rampDownRate)} V/s here), and rather than reach 0 it goes a digit further, so 0.1 becomes 0.09.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
         </p>
       )}
     </div>
