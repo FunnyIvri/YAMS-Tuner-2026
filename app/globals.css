@@ -171,3 +171,25 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* Hints open and close smoothly where the browser can animate to an auto height. */
+@supports selector(::details-content) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  details.hint::details-content {
+    height: 0;
+    overflow: clip;
+    transition:
+      height 200ms ease,
+      content-visibility 200ms allow-discrete;
+  }
+  details.hint[open]::details-content {
+    height: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    details.hint::details-content {
+      transition: none;
+    }
+  }
+}
