@@ -10,7 +10,7 @@ import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { jogParams, overshootTolerance, STALL_DEBOUNCE_MS } from "@/lib/yams/safety"
-import { readSticks, STICK_DEADBAND, type Stick } from "@/lib/gamepad"
+import { PAD_TYPES, readSticks, STICK_DEADBAND, type PadType, type Stick } from "@/lib/gamepad"
 
 type Dir = -1 | 1
 type Mode = "find" | "define"
@@ -96,8 +96,40 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
    */
   const [gravityVolts, setGravityVolts] = useState(0)
   const [driveInput, setDriveInput] = useState<DriveInput>("buttons")
-  /** The controller the browser reports, and which stick is driving, for display. */
-  const [pad, setPad] = useState<{ id: string; stick: Stick | null; value: number } | null>(null)
+  /** The controller the browser reports, both sticks and which one is driving, for the preview. */
+  const [pad, setPad] = useState<{
+    id: string
+    type: string
+    standard: boolean
+    left: number
+    right: number
+    stick: Stick | null
+    value: number
+  } | null>(null)
+  // Which controller it is and whether up reads as down, remembered in this browser.
+  const [padType, setPadType] = useState<PadType>("auto")
+  const [invertPad, setInvertPad] = useState(false)
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("yams-tuner.padType") as PadType | null
+      if (saved && PAD_TYPES.some((t) => t.value === saved)) setPadType(saved)
+      setInvertPad(window.localStorage.getItem("yams-tuner.padInvert") === "true")
+    } catch {
+      // Storage can be unavailable; the defaults apply.
+    }
+  }, [])
+  const padSettings = useRef({ type: padType, invert: invertPad })
+  padSettings.current = { type: padType, invert: invertPad }
+  const choosePad = (type: PadType, invert: boolean) => {
+    setPadType(type)
+    setInvertPad(invert)
+    try {
+      window.localStorage.setItem("yams-tuner.padType", type)
+      window.localStorage.setItem("yams-tuner.padInvert", String(invert))
+    } catch {
+      // Not remembered, but still used.
+    }
+  }
   /** Driving with a stick: how far it is pushed, 0 to 1, which scales the drive voltage. */
   const stickScale = useRef(1)
   const [gravityText, setGravityText] = useState("0")
@@ -493,17 +525,17 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     let waitForCenter = false
     let shown = ""
     const id = window.setInterval(() => {
-      const sticks = readSticks()
+      const sticks = readSticks(padSettings.current.type, padSettings.current.invert)
       let value = 0
       if (sticks) {
         if (active && sticks[active] === 0) active = null
         if (!active) active = sticks.left !== 0 ? "left" : sticks.right !== 0 ? "right" : null
         value = active ? sticks[active] : 0
       } else active = null
-      const key = sticks ? `${sticks.id}|${active}|${value.toFixed(2)}` : ""
+      const key = sticks ? `${sticks.id}|${sticks.type}|${active}|${sticks.left.toFixed(2)}|${sticks.right.toFixed(2)}` : ""
       if (key !== shown) {
         shown = key
-        setPad(sticks ? { id: sticks.id, stick: active, value } : null)
+        setPad(sticks ? { id: sticks.id, type: sticks.type, standard: sticks.standard, left: sticks.left, right: sticks.right, stick: active, value } : null)
       }
       const canDrive = sessionRef.current === "verify" && !document.hidden
       if (value === 0 || !canDrive) {
@@ -825,6 +857,70 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         )}
       </div>
 
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground" id="drive-input-label">
+          Drive with
+        </span>
+        <div role="radiogroup" aria-labelledby="drive-input-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
+          {(
+            [
+              ["buttons", "Hold buttons"],
+              ["controller", "Game controller"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={driveInput === value}
+              disabled={driving !== null || rampingDown}
+              onClick={() => setDriveInput(value)}
+              className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {driveInput === "controller" && (
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">Controller</span>
+                <select
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                  value={padType}
+                  disabled={driving !== null}
+                  onChange={(e) => choosePad(e.target.value as PadType, invertPad)}
+                >
+                  {PAD_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-foreground"
+                  checked={invertPad}
+                  disabled={driving !== null}
+                  onChange={(e) => choosePad(padType, e.target.checked)}
+                />
+                Invert up and down
+              </label>
+            </div>
+            <StickPreview pad={pad} />
+            <p className="text-xs leading-relaxed text-muted-foreground" data-pad="status">
+              {pad
+                ? `${pad.id}, read as ${PAD_TYPES.find((t) => t.value === pad.type)?.label ?? pad.type}${pad.standard ? " (standard layout)" : ""}. ${pad.stick ? (verifying ? `The ${pad.stick} stick is driving at ${Math.round(Math.abs(pad.value) * 100)}% of the drive voltage.` : `The ${pad.stick} stick is pushed ${pad.value > 0 ? "up" : "down"} ${Math.round(Math.abs(pad.value) * 100)}%. It drives once verification starts.`) : "Push either stick up or down to drive."}`
+                : "No controller found. Plug one in and press any of its buttons."}{" "}
+              {`Before driving, push each stick up: its bar must go up. If it goes down, as some Xbox controllers read, tick Invert up and down. Either stick drives, whichever moves first, up toward the upper end. Its travel past a ${Math.round(STICK_DEADBAND * 100)}% deadband scales the drive voltage, and centering it releases, like letting go of a button. After a drive stops by itself, center the stick before driving again. The buttons still work.`}
+            </p>
+          </div>
+        )}
+      </div>
+
       {!verifying ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={begin} disabled={starting}>
@@ -842,39 +938,6 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground" id="drive-input-label">
-              Drive with
-            </span>
-            <div role="radiogroup" aria-labelledby="drive-input-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
-              {(
-                [
-                  ["buttons", "Hold buttons"],
-                  ["controller", "Game controller"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={driveInput === value}
-                  disabled={driving !== null || rampingDown}
-                  onClick={() => setDriveInput(value)}
-                  className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {driveInput === "controller" && (
-              <p className="text-xs leading-relaxed text-muted-foreground" data-pad="status">
-                {pad
-                  ? `${pad.id}. ${pad.stick ? `The ${pad.stick} stick is driving at ${Math.round(Math.abs(pad.value) * 100)}% of the drive voltage.` : "Push either stick up or down to drive."}`
-                  : "No controller found. Plug one in and press any of its buttons."}{" "}
-                {`Either stick drives, whichever moves first, up toward the upper end. Its travel past a ${Math.round(STICK_DEADBAND * 100)}% deadband scales the drive voltage, and centering it releases, like letting go of a button. After a drive stops by itself, center the stick before driving again. The buttons still work.`}
-              </p>
-            )}
-          </div>
           {mode === "find" ? (
             <div className="grid grid-cols-2 gap-2">
               <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
@@ -1056,5 +1119,33 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         <Notice>{`Verified range ${fmt(verified.lower)} to ${fmt(verified.upper)}. Live Tuning stops if the mechanism leaves it.`}</Notice>
       )}
     </>
+  )
+}
+
+/** Both sticks' vertical travel as bars, up toward the top, so a reversed stick shows before it drives anything. */
+function StickPreview({ pad }: { pad: { left: number; right: number; stick: Stick | null } | null }) {
+  const bar = (stick: Stick, value: number) => (
+    <div key={stick} className="flex flex-col items-center gap-1" data-stick={stick}>
+      <div className="relative h-24 w-8 overflow-hidden rounded border border-border bg-background">
+        <div className="absolute inset-x-0 top-1/2 h-px bg-border" />
+        <div
+          className={`absolute inset-x-1 ${pad?.stick === stick ? "bg-primary" : "bg-muted-foreground/60"}`}
+          style={
+            value >= 0
+              ? { bottom: "50%", height: `${value * 50}%` }
+              : { top: "50%", height: `${-value * 50}%` }
+          }
+        />
+      </div>
+      <span className="font-mono text-xs tabular text-muted-foreground">{`${stick} ${value >= 0 ? "+" : ""}${Math.round(value * 100)}%`}</span>
+    </div>
+  )
+  return (
+    <div className="flex items-end gap-4" aria-label="Stick preview">
+      <span className="self-start text-xs text-muted-foreground">Up ▲</span>
+      {bar("left", pad?.left ?? 0)}
+      {bar("right", pad?.right ?? 0)}
+      <span className="self-end text-xs text-muted-foreground">▼ Down</span>
+    </div>
   )
 }
