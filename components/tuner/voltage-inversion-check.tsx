@@ -39,7 +39,7 @@ export function VoltageInversionCheck() {
         title="Check inversions"
         description={
           inversionCheck === "passed"
-            ? "Position went up in the positive direction and down in the negative direction."
+            ? "Position followed the sign of the voltage."
             : "Skipped. Only skip this when the motor, encoder and follower inversions were already checked on this robot."
         }
       >
@@ -152,7 +152,9 @@ function CheckBody() {
     nt.set(topics.tuning.voltageEnabled, true)
   }
 
-  const passed = trials.positive === "with" && trials.negative === "with"
+  // One direction is enough: if position follows the voltage one way, the inversions are right. Neither may go against it.
+  const passed =
+    (trials.positive === "with" || trials.negative === "with") && trials.positive !== "against" && trials.negative !== "against"
   const format = (v: number) => `${v.toFixed(2)} V`
   const [lowLabel, highLabel] = kind === "elevator" ? ["down", "up"] : ["reverse", "forward"]
 
@@ -284,7 +286,7 @@ function CheckBody() {
             <TrialStatus label={`Negative voltage moves ${lowLabel}`} result={trials.negative} />
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {`Position ${formatPosition(position, axis)}. Apply at least ${MIN_TEST_VOLTS} V each way until the mechanism moves.`}
+            {`Position ${formatPosition(position, axis)}. Apply at least ${MIN_TEST_VOLTS} V either way until the mechanism moves. One direction is enough.`}
           </p>
 
           <div className="flex flex-wrap gap-2">
