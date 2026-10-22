@@ -15,26 +15,44 @@ import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
 
+/** Why the Live tune step can't be used yet, or null once it can. */
+function useLiveTuneLock(): string | null {
+  const { status, mechanismName, commandName, rangeVerified, checklistConfirmed, inversionCheck } = useTuner()
+  return status !== "connected" || !mechanismName || !commandName
+    ? "Choose a mechanism first."
+    : !checklistConfirmed
+      ? "Complete the pre-motion checklist first."
+      : inversionCheck === "pending"
+        ? "Check the inversions first, or skip that step if it was already done."
+        : !rangeVerified
+          ? "Verify the range of motion first. Setpoints are limited to the verified range."
+          : null
+}
+
 export function SetpointPanel() {
-  const { status, mechanismName, commandName, rangeVerified, checklistConfirmed, inversionCheck, kind } = useTuner()
-  const locked =
-    status !== "connected" || !mechanismName || !commandName
-      ? "Choose a mechanism first."
-      : !checklistConfirmed
-        ? "Complete the pre-motion checklist first."
-        : inversionCheck === "pending"
-          ? "Check the inversions first, or skip that step if it was already done."
-          : !rangeVerified
-            ? "Verify the range of motion first. Setpoints are limited to the verified range."
-            : null
+  const { kind } = useTuner()
   return (
     <Panel
       step={5}
       title="Live tune"
       description="Send setpoints while you adjust gains. Press Space at any time to stop."
-      locked={locked}
+      locked={useLiveTuneLock()}
     >
       {kind === "flywheel" ? <VelocityControl /> : <PositionControl />}
+    </Panel>
+  )
+}
+
+/** On a tablet on its side, step 5 is only this button until Live Tuning starts. The controls then open on the left. */
+export function LiveTuneStart() {
+  return (
+    <Panel
+      step={5}
+      title="Live tune"
+      description="Start Live Tuning to send setpoints. The controls open on the left. Press Space at any time to stop."
+      locked={useLiveTuneLock()}
+    >
+      <SessionButton />
     </Panel>
   )
 }
