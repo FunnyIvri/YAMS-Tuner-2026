@@ -32,8 +32,8 @@ const SLOW_ZONE_TOLERANCES = 8
 /** How fast the voltage ramps down to 0 after a drive button is released, in ramp mode, in volts per second. */
 const DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND = 4
 const MIN_RAMP_DOWN_VOLTS_PER_SECOND = 0.01
-/** Lowering the ramp rate while the mechanism still goes up stops at this many decimal places. */
-const MAX_RAMP_RATE_DECIMALS = 6
+/** Lowering the ramp rate while the mechanism still goes up: below this, in volts per second, the ramp ends. */
+const RAMP_RATE_CUTOFF = 0.0001
 /** How often the drive and the ramp down send a voltage. */
 const LOOP_MS = 20
 /** Holding with the closed loop: moving this far from the hold position at any time means it is running away. */
@@ -485,12 +485,14 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         return
       }
       if (pos !== undefined && lastPos !== undefined && pos > lastPos) {
-        if (rate <= 10 ** -decimals && decimals < MAX_RAMP_RATE_DECIMALS) decimals++
-        const next = Number((rate - 10 ** -decimals).toFixed(decimals))
-        if (next > 0) {
-          rate = next
-          setRampRateNow(rate)
+        if (rate <= 10 ** -decimals) decimals++
+        rate = Number((rate - 10 ** -decimals).toFixed(decimals))
+        if (rate < RAMP_RATE_CUTOFF) {
+          // Too slow to finish: go straight to the hold voltage (0 V unless one is set).
+          endDrive()
+          return
         }
+        setRampRateNow(rate)
       }
       lastPos = pos
       const step = (rate * LOOP_MS) / 1000
@@ -1045,7 +1047,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       </div>
       {release === "ramp" && (
         <p className={`text-xs leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
-          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. While it is still going up, the rate drops by its last digit every ${LOOP_MS} ms (${10 ** -leastDigitDecimals(rampDownRate)} V/s here), and rather than reach 0 it goes a digit further, so 0.1 becomes 0.09.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. While it is still going up, the rate drops by its last digit every ${LOOP_MS} ms (${10 ** -leastDigitDecimals(rampDownRate)} V/s here), and rather than reach 0 it goes a digit further, so 0.1 becomes 0.09. Below ${RAMP_RATE_CUTOFF} V/s the ramp ends and the voltage goes straight to ${gravityLoaded && gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
         </p>
       )}
     </div>
