@@ -63,7 +63,7 @@ export function RangeVerification() {
     <Panel
       step={4}
       title="Verify range of motion"
-      description="Drive to each physical end of travel with a small voltage, or enter a range and drive to each end to prove it. A stall or current fault on the way marks that end automatically. Tuning setpoints are then limited to this verified range."
+      description="Drive to each end of travel with a small voltage, or enter a range and drive to each end. A stall or current fault marks that end. Tuning is then limited to this range."
       locked={
         !mechanismName || !commandName
           ? "Choose a mechanism first."

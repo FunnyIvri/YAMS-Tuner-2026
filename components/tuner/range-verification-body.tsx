@@ -748,11 +748,13 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             </label>
           </div>
           <Hint summary="How entering a range works" className={verifying ? "hidden" : undefined}>
-            {verified.lower !== null || verified.upper !== null
-              ? "Starts from the range already found. Edits apply when you click away or press Enter. Narrowing an end applies right away; widening one past reached travel means driving the mechanism there to test it."
-              : "Each end only counts once the mechanism has actually been driven there."}{" "}
-            Voltage is halved close to each end to limit overshoot. If it stalls or faults on the way, the point where it stopped is marked
-            instead.
+            <ul className="flex list-disc flex-col gap-1 pl-4">
+              <li>{verified.lower !== null || verified.upper !== null ? "Starts from the range already found." : "An end only counts once the mechanism has been driven there."}</li>
+              <li>Edits apply on Enter or when you click away.</li>
+              <li>Narrowing an end applies at once. Widening one means driving there to test it.</li>
+              <li>Voltage halves near each end to limit overshoot.</li>
+              <li>A stall or fault on the way marks where it stopped.</li>
+            </ul>
           </Hint>
           {definedError && (definedLower !== "" || definedUpper !== "") && <Notice tone="warn">{definedError}</Notice>}
           {outsideSoft && <Notice tone="warn">Part of this range is outside the robot&apos;s soft limits. Driving stops at the soft limit.</Notice>}
@@ -786,11 +788,21 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           ))}
         </div>
         <Hint summary="What each hold does" className={verifying ? "hidden" : undefined}>
-          {verifyHold === "zeroVolts"
-            ? gravityLoaded
-              ? "The closed loop never runs: between drives the motor gets the gravity hold voltage below, 0 V unless you set one. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
-              : "The closed loop never runs: between drives the motor gets 0 V, as if disabled. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
-            : "The closed loop holds the mechanism where each drive stops. If it moves away from there or does not settle within a second, verification cuts to 0 V and stops. Only use this once the gains hold the mechanism."}
+          <ul className="flex list-disc flex-col gap-1 pl-4">
+            {verifyHold === "zeroVolts" ? (
+              <>
+                <li>The closed loop never runs.</li>
+                <li>{gravityLoaded ? "Between drives the motor gets the gravity hold voltage, 0 V unless you set one." : "Between drives the motor gets 0 V, as if disabled."}</li>
+                <li>Use this until the gains are tuned: an untuned closed loop can oscillate or run away.</li>
+              </>
+            ) : (
+              <>
+                <li>The closed loop holds where each drive stops.</li>
+                <li>Drifting away, or not settling within a second, cuts to 0 V and stops.</li>
+                <li>Only use this once the gains hold the mechanism.</li>
+              </>
+            )}
+          </ul>
         </Hint>
         {verifyHold === "zeroVolts" && gravityLoaded && (
           <div className="flex flex-col gap-1.5 rounded-md border border-border p-3">
@@ -853,14 +865,14 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
               )}
             </div>
             <Hint summary="How to find the gravity hold voltage" className={verifying ? "hidden" : undefined}>
-              {kind === "arm"
-                ? "The voltage that holds the arm level, like kG: it is scaled by the cosine of the angle (0° is level), so the arm stays put wherever you let go. Start verification, then raise it a little at a time until the arm stops sagging between drives, and lower it if the arm creeps up. Drives add to it, and a ramped release ramps down to it."
-                : "The voltage that holds the elevator up, like kG. Start verification, then raise it a little at a time until the elevator stops sagging between drives, and lower it if the elevator creeps up. Drives add to it, and a ramped release ramps down to it."}
-              {` It is kG: it starts at 0 V, Use robot kG starts from the robot's, and once it holds, Set kG to this sends it to the robot.`}
-              {typeof robotKS === "number" && robotKS > 0
-                ? ` Static friction (kS, ${formatVolts(robotKS)} here) means anything from kG − kS to kG + kS holds it still, so the hold you find is kG within kS: where it starts creeping down and where it starts creeping up are kG − kS and kG + kS.`
-                : " Static friction (kS) means a band of voltages around kG holds it still: kG is the middle of that band, and kS is half its width."}
-              {` Up to ${MAX_GRAVITY_VOLTS} V. Stopping verification still ends at 0 V.`}
+              <ul className="flex list-disc flex-col gap-1 pl-4">
+                <li>{kind === "arm" ? "Holds the arm level, like kG, scaled by the cosine of the angle (0° is level)." : "Holds the elevator up, like kG."}</li>
+                <li>While verifying, raise it until it stops sagging between drives. Lower it if it creeps up.</li>
+                <li>Drives add to it, and a ramp ends at it.</li>
+                <li>Starts at 0 V. Use robot kG loads the robot&apos;s; Set kG to this sends yours back.</li>
+                <li>{`Friction (kS${typeof robotKS === "number" && robotKS > 0 ? `, ${formatVolts(robotKS)} here` : ""}) means anything from kG − kS to kG + kS holds it still.`}</li>
+                <li>{`Up to ${MAX_GRAVITY_VOLTS} V. Stopping verification ends at 0 V.`}</li>
+              </ul>
             </Hint>
           </div>
         )}
@@ -927,7 +939,13 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
                 : "No controller found. Plug one in and press any of its buttons."}
             </p>
             <Hint summary="How driving with a controller works" className={verifying ? "hidden" : undefined}>
-              {`Before driving, push each stick up: its bar must go up. If it goes down, as some Xbox controllers read, tick Invert up and down. Either stick drives, whichever moves first, up toward the upper end. Its travel past a ${Math.round(STICK_DEADBAND * 100)}% deadband scales the drive voltage, and centering it releases, like letting go of a button. After a drive stops by itself, center the stick before driving again. The buttons still work.`}
+              <ul className="flex list-disc flex-col gap-1 pl-4">
+                <li>Push each stick up: its bar should go up. If it goes down, tick Invert up and down.</li>
+                <li>Whichever stick moves first drives. Up drives toward the upper end.</li>
+                <li>{`Travel past the ${Math.round(STICK_DEADBAND * 100)}% deadband scales the voltage. Centering the stick releases.`}</li>
+                <li>After a drive stops by itself, center the stick to drive again.</li>
+                <li>The buttons still work.</li>
+              </ul>
             </Hint>
           </div>
         )}
@@ -1039,7 +1057,13 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       </div>
       {release === "ramp" && (
         <Hint summary="How the ramp works" className={verifying ? "hidden" : undefined}>
-          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. While it is still going up, the rate rises by its own last digit every ${LOOP_MS} ms, so 0.09 becomes 0.1, then 0.2, up to ${Math.max(MAX_RAMP_RATE_BOOST, rampDownRate)} V/s.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+          <ul className="flex list-disc flex-col gap-1 pl-4">
+            <li>{`On release the voltage falls at ${rampDownRate} V/s: ${formatDuration(driveVolts / rampDownRate)} from ${formatVolts(driveVolts)}.`}</li>
+            <li>The mechanism keeps moving while it ramps.</li>
+            <li>{`While it still goes up, the rate rises by its last digit every ${LOOP_MS} ms (0.09, 0.1, 0.2), up to ${Math.max(MAX_RAMP_RATE_BOOST, rampDownRate)} V/s.`}</li>
+            {kind === "arm" && <li>{`Below 0° there is no ramp: it goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}.`}</li>}
+            <li>Faults, ends, soft limits, stalls and marking still cut at once.</li>
+          </ul>
         </Hint>
       )}
     </div>
@@ -1170,8 +1194,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             {!rangeVerified && skipControl}
           </div>
           <Hint summary="Which way the drive buttons push">
-            Driving down applies negative voltage and driving up positive, so a correctly inverted mechanism moves down on negative volts. Use
-            the least voltage that moves the mechanism. Elevators and arms may need more to drive against gravity than with it.
+            <ul className="flex list-disc flex-col gap-1 pl-4">
+              <li>Down is negative voltage, up is positive.</li>
+              <li>Use the least voltage that moves the mechanism.</li>
+              <li>Against gravity can take more than with it.</li>
+            </ul>
           </Hint>
           {notices}
         </>
