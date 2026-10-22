@@ -237,8 +237,9 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       setSession(null)
       setLastStop({ reason, at: Date.now(), fault, cause })
       if (!name) return
-      if (was === "verify" && hold === "zeroVolts" && k !== "flywheel") {
-        // Verifying at 0 V: the closed loop may be untuned, so stay at 0 V until the command has ended.
+      if (((was === "verify" && hold === "zeroVolts") || was === "voltage") && k !== "flywheel") {
+        // Checking inversions, or verifying at 0 V: the closed loop may be untuned, so stay at 0 V until the command
+        // has ended.
         holdAtZeroVolts(nt, name)
         if (cmd) nt.set(liveTuningCommandTopic(cmd), false)
         setTimeout(() => releaseVoltage(nt, name), 100)
@@ -298,8 +299,9 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         if (pos === undefined) return "No position telemetry. Set the telemetry verbosity to HIGH on the robot."
         nt.set(t.tuning.setpointVelocity, 0)
         nt.set(t.tuning.setpointPosition, pos)
-        // Verifying at 0 V: voltage mode is on before the command starts, so the closed loop never runs.
-        if (purpose === "verify" && live.current.verifyHold === "zeroVolts") holdAtZeroVolts(nt, name)
+        // Checking inversions, or verifying at 0 V: voltage mode is on before the command starts, so the closed loop,
+        // which may be untuned, never runs.
+        if (purpose === "voltage" || (purpose === "verify" && live.current.verifyHold === "zeroVolts")) holdAtZeroVolts(nt, name)
       }
       startingRef.current = true
       setStarting(true)
@@ -419,11 +421,17 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   // Leaving the page must not leave anything moving.
   useEffect(() => {
     const onLeave = () => {
-      if (live.current.session) stop("Page closed")
+      const { session, commandName, mechanismName } = live.current
+      if (!session) return
+      stop("Page closed")
+      // A closing page never runs stop's timers, so end Live Tuning and voltage mode now, before the page goes: stop
+      // has already set the setpoint to where the mechanism is.
+      if (commandName) nt.set(liveTuningCommandTopic(commandName), false)
+      if (mechanismName) releaseVoltage(nt, mechanismName)
     }
     window.addEventListener("pagehide", onLeave)
     return () => window.removeEventListener("pagehide", onLeave)
-  }, [stop])
+  }, [stop, nt])
 
   // Space (and Esc) always stops. Space is reserved as the stop key everywhere on the page, so it is swallowed
   // in the capture phase and can never activate a focused control such as the Start button.
