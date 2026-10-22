@@ -31,7 +31,7 @@ const RAMP_MS = 400
 const SLOW_ZONE_TOLERANCES = 8
 /** How fast the voltage ramps down to 0 after a drive button is released, in ramp mode, in volts per second. */
 const DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND = 4
-const MIN_RAMP_DOWN_VOLTS_PER_SECOND = 0.5
+const MIN_RAMP_DOWN_VOLTS_PER_SECOND = 0.001
 /** How often the drive and the ramp down send a voltage. */
 const LOOP_MS = 20
 /** Holding with the closed loop: moving this far from the hold position at any time means it is running away. */
@@ -85,7 +85,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const [maxDriveVolts, setMaxDriveVolts] = useState(DEFAULT_MAX_DRIVE_VOLTS)
   const [minDriveVolts, setMinDriveVolts] = useState(MIN_DRIVE_VOLTS)
   const [appliedVolts, setAppliedVolts] = useState(0)
-  const [release, setRelease] = useState<Release>("cut")
+  // An arm swings under gravity when the voltage is cut, so it ramps down by default.
+  const [release, setRelease] = useState<Release>(kind === "arm" ? "ramp" : "cut")
+  useEffect(() => setRelease(kind === "arm" ? "ramp" : "cut"), [kind])
   const [rampDownRate, setRampDownRate] = useState(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND)
   const [rampDownText, setRampDownText] = useState(String(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND))
   /** The voltage is ramping down to 0 after a release. */
@@ -468,15 +470,16 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       }
       // Down to the gravity hold voltage, which is 0 V unless one is set.
       const goal = holdVoltsAt(reader.position())
+      // Not rounded as it goes: a slow ramp's step can be far below a millivolt.
       out = Math.abs(out - goal) <= step ? goal : out - Math.sign(out - goal) * step
-      out = Math.round(out * 1000) / 1000
       if (out === goal) {
         endDrive()
         return
       }
-      sentVolts.current = out
-      nt.set(t.tuning.voltageSetpoint, out)
-      setAppliedVolts(out)
+      const sent = Math.round(out * 1e6) / 1e6
+      sentVolts.current = sent
+      nt.set(t.tuning.voltageSetpoint, sent)
+      setAppliedVolts(sent)
     }, LOOP_MS)
   }
 
@@ -1012,7 +1015,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </div>
           {release === "ramp" && (
             <p className="text-xs leading-relaxed text-muted-foreground">
-              {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${(driveVolts / rampDownRate).toFixed(2)} s, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+              {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
             </p>
           )}
         </div>
@@ -1172,4 +1175,11 @@ function StickPreview({ pad }: { pad: { left: number; right: number; stick: Stic
       <span className="self-end text-xs text-muted-foreground">▼ Down</span>
     </div>
   )
+}
+
+/** A duration in seconds, as seconds, minutes or hours, whichever reads best. */
+function formatDuration(seconds: number) {
+  if (seconds < 60) return `${seconds.toFixed(2)} s`
+  if (seconds < 3600) return `${(seconds / 60).toFixed(1)} min`
+  return `${(seconds / 3600).toFixed(1)} h`
 }
