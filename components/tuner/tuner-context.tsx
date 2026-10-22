@@ -51,6 +51,19 @@ function releaseVoltage(nt: LiveNT, name: string) {
   if (nt.isAnnounced(t.tuning.voltageEnabled)) nt.set(t.tuning.voltageEnabled, false)
 }
 
+/**
+ * What holds the mechanism between drives during range-of-motion verification: 0 V, so the closed loop never runs, or
+ * the closed loop, which is only safe once its gains are tuned.
+ */
+export type VerifyHold = "zeroVolts" | "closedLoop"
+
+/** Applies 0 V in voltage mode: the motor is driven by nothing, as if disabled, and the closed loop does not run. */
+function holdAtZeroVolts(nt: LiveNT, name: string) {
+  const t = yamsTopics(name)
+  if (nt.isAnnounced(t.tuning.voltageSetpoint)) nt.set(t.tuning.voltageSetpoint, 0)
+  if (nt.isAnnounced(t.tuning.voltageEnabled)) nt.set(t.tuning.voltageEnabled, true)
+}
+
 export interface StopEvent {
   reason: string
   at: number
@@ -108,6 +121,9 @@ interface TunerApi {
   currentAsWarning: boolean
   setCurrentAsWarning: (v: boolean) => void
   currentWarning: string | null
+  /** What holds the mechanism between drives while verifying the range of motion. */
+  verifyHold: VerifyHold
+  setVerifyHold: (v: VerifyHold) => void
   /** The operator explicitly skipped range-of-motion verification and accepted the risk. */
   rangeSkipped: boolean
   setRangeSkipped: (v: boolean) => void
@@ -160,6 +176,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const [lastStop, setLastStop] = useState<StopEvent | null>(null)
   const [currentAsWarning, setCurrentAsWarning] = useState(false)
   const [rangeSkipped, setRangeSkipped] = useState(false)
+  // The range is usually verified before the gains are tuned, and an untuned closed loop can oscillate or run away.
+  const [verifyHold, setVerifyHold] = useState<VerifyHold>("zeroVolts")
   const [inversionCheck, setInversionCheck] = useState<InversionCheck>("pending")
 
   useEffect(() => {
@@ -189,7 +207,19 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     setInversionCheck("pending")
   }, [])
 
-  const liveValues = { mechanismName, commandName, kind, axis, verified, session, stallCurrent, positional, isSimulation, currentAsWarning }
+  const liveValues = {
+    mechanismName,
+    commandName,
+    kind,
+    axis,
+    verified,
+    session,
+    stallCurrent,
+    positional,
+    isSimulation,
+    currentAsWarning,
+    verifyHold,
+  }
   const live = useRef(liveValues)
   live.current = liveValues
   const [rangeWarning, setRangeWarning] = useState<string | null>(null)
@@ -202,11 +232,18 @@ export function TunerProvider({ children }: { children: ReactNode }) {
 
   const stop = useCallback(
     (reason = "Stopped by operator", fault = false, cause?: StopEvent["cause"]) => {
-      const { mechanismName: name, commandName: cmd, kind: k, axis: ax } = live.current
+      const { mechanismName: name, commandName: cmd, kind: k, axis: ax, session: was, verifyHold: hold } = live.current
       stopGeneration.current++
       setSession(null)
       setLastStop({ reason, at: Date.now(), fault, cause })
       if (!name) return
+      if (was === "verify" && hold === "zeroVolts" && k !== "flywheel") {
+        // Verifying at 0 V: the closed loop may be untuned, so stay at 0 V until the command has ended.
+        holdAtZeroVolts(nt, name)
+        if (cmd) nt.set(liveTuningCommandTopic(cmd), false)
+        setTimeout(() => releaseVoltage(nt, name), 100)
+        return
+      }
       // Open-loop voltage is the most dangerous output, so it is always released first.
       releaseVoltage(nt, name)
       const t = yamsTopics(name)
@@ -261,6 +298,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         if (pos === undefined) return "No position telemetry. Set the telemetry verbosity to HIGH on the robot."
         nt.set(t.tuning.setpointVelocity, 0)
         nt.set(t.tuning.setpointPosition, pos)
+        // Verifying at 0 V: voltage mode is on before the command starts, so the closed loop never runs.
+        if (purpose === "verify" && live.current.verifyHold === "zeroVolts") holdAtZeroVolts(nt, name)
       }
       startingRef.current = true
       setStarting(true)
@@ -529,6 +568,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     currentAsWarning,
     setCurrentAsWarning,
     currentWarning,
+    verifyHold,
+    setVerifyHold,
     rangeSkipped,
     setRangeSkipped,
     inversionCheck,

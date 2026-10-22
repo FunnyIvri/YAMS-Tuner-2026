@@ -9,11 +9,13 @@ import { Kbd, Notice } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
-import { jogParams, STALL_DEBOUNCE_MS } from "@/lib/yams/safety"
+import { jogParams, overshootTolerance, STALL_DEBOUNCE_MS } from "@/lib/yams/safety"
 
 type Dir = -1 | 1
 type Mode = "find" | "define"
 type Side = "lower" | "upper"
+/** What releasing a drive button does: cut the voltage to 0 at once, or ramp it down to 0. */
+type Release = "cut" | "ramp"
 
 const DEFAULT_DRIVE_VOLTS = 1
 const MIN_DRIVE_VOLTS = 0.25
@@ -24,6 +26,15 @@ const HARD_LIMIT_VOLTS = 12
 const RAMP_MS = 400
 /** Within this many reach tolerances of a defined end, the drive voltage is halved to limit overshoot. */
 const SLOW_ZONE_TOLERANCES = 8
+/** How fast the voltage ramps down to 0 after a drive button is released, in ramp mode, in volts per second. */
+const DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND = 4
+const MIN_RAMP_DOWN_VOLTS_PER_SECOND = 0.5
+/** How often the drive and the ramp down send a voltage. */
+const LOOP_MS = 20
+/** Holding with the closed loop: moving this far from the hold position at any time means it is running away. */
+const RUNAWAY_TOLERANCE = { linear: 0.1, rotary: 30 }
+/** Holding with the closed loop: still this far off after HOLD_SETTLE_MS means the gains are not holding it. */
+const HOLD_SETTLE_MS = 1000
 
 const sideOf = (dir: Dir): Side => (dir > 0 ? "upper" : "lower")
 const formatVolts = (v: number) => `${v.toFixed(2)} V`
@@ -44,6 +55,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     lastStop,
     stallCurrent,
     currentAsWarning,
+    verifyHold,
+    setVerifyHold,
   } = useTuner()
   const { position, lower: softLower, upper: softUpper } = useAxisValues()
   const params = jogParams(axis)
@@ -61,6 +74,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const [maxDriveVolts, setMaxDriveVolts] = useState(DEFAULT_MAX_DRIVE_VOLTS)
   const [minDriveVolts, setMinDriveVolts] = useState(MIN_DRIVE_VOLTS)
   const [appliedVolts, setAppliedVolts] = useState(0)
+  const [release, setRelease] = useState<Release>("cut")
+  const [rampDownRate, setRampDownRate] = useState(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND)
+  const [rampDownText, setRampDownText] = useState(String(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND))
+  /** The voltage is ramping down to 0 after a release. */
+  const [rampingDown, setRampingDown] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<{ tone: "warn" | "info"; text: string } | null>(null)
   const [driving, setDriving] = useState<Dir | null>(null)
@@ -68,11 +86,17 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const [definedUpper, setDefinedUpper] = useState(() => (softUpper !== undefined ? softUpper.toFixed(decimals) : ""))
 
   const timer = useRef<number | null>(null)
+  /** The voltage last sent while driving, which a ramp down starts from. */
+  const sentVolts = useRef(0)
   const lastDrive = useRef<{ dir: Dir; endedAt: number | null } | null>(null)
   const sessionRef = useRef(session)
   sessionRef.current = session
   const verifiedRef = useRef(verified)
   verifiedRef.current = verified
+  const verifyHoldRef = useRef(verifyHold)
+  verifyHoldRef.current = verifyHold
+  /** Holding with the closed loop: where it should hold, and since when. */
+  const holdAt = useRef<{ position: number; since: number } | null>(null)
 
   const verifying = session === "verify"
   const fmt = (v: number) => formatPosition(v, axis)
@@ -115,14 +139,26 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         timer.current = null
       }
       if (lastDrive.current && lastDrive.current.endedAt === null) lastDrive.current.endedAt = Date.now()
+      sentVolts.current = 0
       setDriving(null)
+      setRampingDown(false)
       setAppliedVolts(0)
+      holdAt.current = null
       if (!mechanismName) return
       const t = yamsTopics(mechanismName)
+      if (hold && sessionRef.current === "verify" && verifyHoldRef.current === "zeroVolts") {
+        // Holding at 0 V: stay in voltage mode, so the closed loop, which may be untuned, never takes over.
+        if (nt.isAnnounced(t.tuning.voltageSetpoint)) nt.set(t.tuning.voltageSetpoint, 0)
+        if (nt.isAnnounced(t.tuning.voltageEnabled)) nt.set(t.tuning.voltageEnabled, true)
+        return
+      }
       // Seed the hold position before releasing voltage so the closed loop never jumps to a stale target.
       if (hold && sessionRef.current === "verify") {
         const pos = axisReader(nt, mechanismName, axis).position()
-        if (pos !== undefined) nt.set(t.tuning.setpointPosition, pos)
+        if (pos !== undefined) {
+          nt.set(t.tuning.setpointPosition, pos)
+          holdAt.current = { position: pos, since: performance.now() }
+        }
       }
       if (nt.isAnnounced(t.tuning.voltageSetpoint)) nt.set(t.tuning.voltageSetpoint, 0)
       if (nt.isAnnounced(t.tuning.voltageEnabled)) nt.set(t.tuning.voltageEnabled, false)
@@ -146,10 +182,43 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   }, [verifying, endDrive])
   useEffect(() => () => endDrive(false), [endDrive])
 
+  // Holding with the closed loop: it holds where verification started, and wherever each drive stops. If it runs away
+  // from there, or has not settled close to it after a second, its gains are not holding the mechanism: cut to 0 V
+  // and stop.
+  useEffect(() => {
+    if (!verifying || verifyHold !== "closedLoop" || !mechanismName) return
+    const reader = axisReader(nt, mechanismName, axis)
+    const start = reader.position()
+    if (start !== undefined && timer.current === null) holdAt.current = { position: start, since: performance.now() }
+    const runaway = axis === "linear" ? RUNAWAY_TOLERANCE.linear : RUNAWAY_TOLERANCE.rotary
+    const settled = overshootTolerance(axis)
+    const id = window.setInterval(() => {
+      const hold = holdAt.current
+      if (!hold || timer.current !== null || sessionRef.current !== "verify") return
+      const pos = reader.position()
+      if (pos === undefined) return
+      const off = Math.abs(pos - hold.position)
+      const unsettled = performance.now() - hold.since > HOLD_SETTLE_MS && off > settled
+      if (off <= runaway && !unsettled) return
+      holdAt.current = null
+      const t = yamsTopics(mechanismName)
+      nt.set(t.tuning.voltageSetpoint, 0)
+      nt.set(t.tuning.voltageEnabled, true)
+      stop(
+        `The closed loop moved the mechanism ${formatPosition(off, axis)} from where it should hold${
+          unsettled && off <= runaway ? " and did not settle" : ""
+        }. Its gains are probably not tuned yet: verify the range holding at 0 V instead.`,
+        true,
+      )
+    }, LOOP_MS)
+    return () => clearInterval(id)
+  }, [verifying, verifyHold, mechanismName, nt, axis, stop])
+
   /** Drives toward an end with voltage. With a target it stops there and marks it; without one it runs until released. */
   const beginDrive = (dir: Dir, target?: number) => {
     if (!verifying || !mechanismName || !supported) return
     endDrive(false)
+    holdAt.current = null
     const reader = axisReader(nt, mechanismName, axis)
     const t = yamsTopics(mechanismName)
     const startPos = reader.position()
@@ -237,6 +306,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       const out = Math.round(dir * volts * ramp * (nearTarget ? 0.5 : 1) * 100) / 100
       if (out !== sent) {
         sent = out
+        sentVolts.current = out
         nt.set(t.tuning.voltageSetpoint, out)
         setAppliedVolts(out)
       }
@@ -257,7 +327,44 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           )
         }
       }
-    }, 20)
+    }, LOOP_MS)
+  }
+
+  /**
+   * Releasing a drive button. In ramp mode the voltage steps down from wherever it is to 0 at the ramp rate, sent from
+   * this page, before the closed loop takes over and holds the position; otherwise it is cut at once. Every other stop
+   * (a fault, the wrong direction, an end or soft limit reached, a stall, marking) still cuts at once.
+   */
+  const releaseDrive = () => {
+    if (timer.current === null) return
+    const start = sentVolts.current
+    if (release === "cut" || start === 0 || !mechanismName) {
+      endDrive()
+      return
+    }
+    clearInterval(timer.current)
+    timer.current = null
+    holdAt.current = null
+    const t = yamsTopics(mechanismName)
+    const step = (rampDownRate * LOOP_MS) / 1000
+    let out = start
+    setDriving(null)
+    setRampingDown(true)
+    timer.current = window.setInterval(() => {
+      if (sessionRef.current !== "verify") {
+        endDrive(false)
+        return
+      }
+      out = Math.abs(out) <= step ? 0 : out - Math.sign(out) * step
+      out = Math.round(out * 100) / 100
+      if (out === 0) {
+        endDrive()
+        return
+      }
+      sentVolts.current = out
+      nt.set(t.tuning.voltageSetpoint, out)
+      setAppliedVolts(out)
+    }, LOOP_MS)
   }
 
   /**
@@ -362,12 +469,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       e.currentTarget.setPointerCapture(e.pointerId)
       onStart()
     },
-    onPointerUp: () => endDrive(),
-    onPointerCancel: () => endDrive(),
-    onLostPointerCapture: () => endDrive(),
+    onPointerUp: () => releaseDrive(),
+    onPointerCancel: () => releaseDrive(),
+    onLostPointerCapture: () => releaseDrive(),
     // Pressing the other drive button moves focus off this one. Only this button's own drive stops then, not the new one.
     onBlur: () => {
-      if (lastDrive.current?.dir === dir && lastDrive.current.endedAt === null) endDrive()
+      if (lastDrive.current?.dir === dir && lastDrive.current.endedAt === null && driving === dir) releaseDrive()
     },
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   })
@@ -467,6 +574,37 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         </div>
       )}
 
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground" id="hold-label">
+          Between drives, hold the mechanism with
+        </span>
+        <div role="radiogroup" aria-labelledby="hold-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
+          {(
+            [
+              ["zeroVolts", "0 V (safe before tuning)"],
+              ["closedLoop", "Closed loop (tuned gains)"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={verifyHold === value}
+              disabled={verifying || starting}
+              onClick={() => setVerifyHold(value)}
+              className="rounded px-3 py-2 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {verifyHold === "zeroVolts"
+            ? "The closed loop never runs: between drives the motor gets 0 V, as if disabled, so an arm or elevator can settle under gravity. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
+            : "The closed loop holds the mechanism where each drive stops. If it moves away from there or does not settle within a second, verification cuts to 0 V and stops. Only use this once the gains hold the mechanism."}
+        </p>
+      </div>
+
       {!verifying ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={begin} disabled={starting}>
@@ -474,7 +612,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             {rangeVerified ? "Re-verify range" : "Start verification"}
           </Button>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Holds the mechanism where it is. Voltage is only applied while you hold a drive button.
+            {verifyHold === "zeroVolts"
+              ? "Applies 0 V to start with. Voltage is only applied while you hold a drive button."
+              : "Holds the mechanism where it is with the closed loop. Voltage is only applied while you hold a drive button."}
           </p>
           {!rangeVerified && skipControl}
         </div>
@@ -522,7 +662,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             <span className="flex justify-between text-xs uppercase tracking-wide text-muted-foreground">
               <label htmlFor="drive-volts">Drive voltage (magnitude)</label>
               <span className="font-mono normal-case tabular">
-                {driving !== null ? `Applying ${formatVolts(appliedVolts)}` : formatVolts(driveVolts)}
+                {driving !== null
+                  ? `Applying ${formatVolts(appliedVolts)}`
+                  : rampingDown
+                    ? `Ramping down ${formatVolts(appliedVolts)}`
+                    : formatVolts(driveVolts)}
               </span>
             </span>
             <input
@@ -567,6 +711,58 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
                 }}
               />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground" id="release-label">
+                When a drive button is released
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div role="radiogroup" aria-labelledby="release-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
+                  {(
+                    [
+                      ["cut", "Cut to 0 V"],
+                      ["ramp", "Ramp to 0 V"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={release === value}
+                      disabled={driving !== null || rampingDown}
+                      onClick={() => setRelease(value)}
+                      className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {release === "ramp" && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <Input
+                      inputMode="decimal"
+                      aria-label="Ramp down rate in volts per second"
+                      className="h-8 w-20 font-mono"
+                      value={rampDownText}
+                      disabled={driving !== null || rampingDown}
+                      onChange={(e) => setRampDownText(e.target.value)}
+                      onBlur={() => {
+                        const v = Number.parseFloat(rampDownText)
+                        const next = Number.isFinite(v) ? Math.max(MIN_RAMP_DOWN_VOLTS_PER_SECOND, v) : rampDownRate
+                        setRampDownRate(next)
+                        setRampDownText(String(next))
+                      }}
+                      onKeyDown={blurOnEnter}
+                    />
+                    <span className="text-muted-foreground">V/s</span>
+                  </label>
+                )}
+              </div>
+              {release === "ramp" && (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${(driveVolts / rampDownRate).toFixed(2)} s, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+                </p>
+              )}
+            </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               Driving down applies this as negative voltage and driving up as positive, so a correctly inverted mechanism moves down on
               negative volts. Use the least voltage that moves the mechanism. Elevators and arms may need more to drive against gravity than with it.
@@ -588,7 +784,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </p>
           <Button
             onClick={() => stop("Range of motion verified")}
-            disabled={verified.lower === null || verified.upper === null || driving !== null}
+            disabled={verified.lower === null || verified.upper === null || driving !== null || rampingDown}
           >
             Finish verification
           </Button>
