@@ -92,6 +92,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const [rampDownText, setRampDownText] = useState(String(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND))
   /** The voltage is ramping down to 0 after a release. */
   const [rampingDown, setRampingDown] = useState(false)
+  /** The ramp's rate right now, lowered while the mechanism keeps going up after a release. */
+  const [rampRateNow, setRampRateNow] = useState(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND)
   /**
    * Holding with voltage: the voltage that balances the mechanism's weight, sent between drives instead of 0 V. For an
    * arm it is the voltage that holds it level, scaled by the cosine of its angle, like kG.
@@ -461,10 +463,16 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     timer.current = null
     holdAt.current = null
     const t = yamsTopics(mechanismName)
-    const step = (rampDownRate * LOOP_MS) / 1000
+    // While it is still going up, the rate drops by the last digit of the rate entered every loop, but never to 0, so
+    // the ramp always finishes. Only for this ramp: the next release starts from the entered rate.
+    const decimals = leastDigitDecimals(rampDownRate)
+    const rateStep = 10 ** -decimals
+    let rate = rampDownRate
+    let lastPos = reader.position()
     let out = start
     setDriving(null)
     setRampingDown(true)
+    setRampRateNow(rate)
     timer.current = window.setInterval(() => {
       if (sessionRef.current !== "verify") {
         endDrive(false)
@@ -475,6 +483,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         endDrive()
         return
       }
+      if (pos !== undefined && lastPos !== undefined && pos > lastPos && rate > rateStep) {
+        rate = Math.max(rateStep, Number((rate - rateStep).toFixed(decimals)))
+        setRampRateNow(rate)
+      }
+      lastPos = pos
+      const step = (rate * LOOP_MS) / 1000
       // Down to the gravity hold voltage, which is 0 V unless one is set.
       const goal = holdVoltsAt(pos)
       // Not rounded as it goes: a slow ramp's step can be far below a millivolt.
@@ -928,7 +942,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             {driving !== null
               ? `Applying ${formatVolts(appliedVolts)}`
               : rampingDown
-                ? `Ramping down ${formatVolts(appliedVolts)}`
+                ? `Ramping down ${formatVolts(appliedVolts)} at ${rampRateNow} V/s`
                 : formatVolts(driveVolts)}
           </span>
         </span>
@@ -1026,7 +1040,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       </div>
       {release === "ramp" && (
         <p className={`text-xs leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
-          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. While it is still going up, the rate drops by ${10 ** -leastDigitDecimals(rampDownRate)} V/s every ${LOOP_MS} ms, the last digit of the rate entered, but never below that.${kind === "arm" ? ` Below 0° the arm does not ramp: the voltage goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}, so it is not carried further back.` : ""} Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
         </p>
       )}
     </div>
@@ -1192,4 +1206,9 @@ function formatDuration(seconds: number) {
   if (seconds < 60) return `${seconds.toFixed(2)} s`
   if (seconds < 3600) return `${(seconds / 60).toFixed(1)} min`
   return `${(seconds / 3600).toFixed(1)} h`
+}
+
+/** How many decimal places a number is written with, so its last digit is 10 to the minus that. */
+function leastDigitDecimals(value: number) {
+  return (String(value).split(".")[1] ?? "").length
 }
