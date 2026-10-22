@@ -41,7 +41,11 @@ function DefaultLayout() {
 
 /**
  * A tablet on its side. Until Live Tuning starts, step 5 is a start button under the telemetry. Once it starts,
- * the setpoint controls open at the top of the left column, beside the telemetry and gains on the right.
+ * the setpoint controls and gains open at the top of the left column, beside the telemetry on the right.
+ *
+ * Only the telemetry is pinned. The gains scroll with the page, so when a field near the bottom (such as the
+ * current limits) opens the on-screen keyboard, the page can scroll it into view. Inside a pinned column with its
+ * own scroll area, the keyboard covered them.
  */
 function TabletLandscapeLayout() {
   const { session } = useTuner()
@@ -57,23 +61,20 @@ function TabletLandscapeLayout() {
     <main className="mx-auto grid max-w-7xl grid-cols-2 gap-4 px-4 pt-6 pb-8">
       <div className="flex flex-col gap-4">
         {tuning && (
-          <div ref={controls} className="scroll-mt-24">
+          <div ref={controls} className="flex scroll-mt-24 flex-col gap-4">
             <SetpointPanel />
+            <GainsPanel />
           </div>
         )}
         <MechanismPanel />
         <SafetyChecklist />
         <VoltageInversionCheck />
         <RangeVerification />
+        {!tuning && <GainsPanel />}
       </div>
-      <div className="sticky top-20 flex max-h-[calc(100dvh-8rem)] flex-col gap-4 self-start">
-        <div className="shrink-0">
-          <TelemetryPanel />
-        </div>
-        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
-          {!tuning && <LiveTuneStart />}
-          <GainsPanel />
-        </div>
+      <div className="sticky top-20 flex flex-col gap-4 self-start">
+        <TelemetryPanel />
+        {!tuning && <LiveTuneStart />}
       </div>
     </main>
   )
