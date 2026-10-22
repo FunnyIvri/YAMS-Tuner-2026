@@ -10,12 +10,15 @@ import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { jogParams, overshootTolerance, STALL_DEBOUNCE_MS } from "@/lib/yams/safety"
+import { readSticks, STICK_DEADBAND, type Stick } from "@/lib/gamepad"
 
 type Dir = -1 | 1
 type Mode = "find" | "define"
 type Side = "lower" | "upper"
 /** What releasing a drive button does: cut the voltage to 0 at once, or ramp it down to 0. */
 type Release = "cut" | "ramp"
+/** What drives the mechanism: holding the on-screen buttons, or a game controller's stick. */
+type DriveInput = "buttons" | "controller"
 
 const DEFAULT_DRIVE_VOLTS = 1
 const MIN_DRIVE_VOLTS = 0.25
@@ -39,6 +42,8 @@ const HOLD_SETTLE_MS = 1000
 const MAX_GRAVITY_VOLTS = 3
 /** One press of − or + on the gravity hold voltage. */
 const GRAVITY_STEP_VOLTS = 0.02
+/** Driving with a stick, below this fraction of the drive voltage a mechanism may just not move: no hard stop then. */
+const STALL_CHECK_MIN_STICK = 0.9
 
 const sideOf = (dir: Dir): Side => (dir > 0 ? "upper" : "lower")
 const formatVolts = (v: number) => `${v.toFixed(2)} V`
@@ -90,6 +95,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
    * arm it is the voltage that holds it level, scaled by the cosine of its angle, like kG.
    */
   const [gravityVolts, setGravityVolts] = useState(0)
+  const [driveInput, setDriveInput] = useState<DriveInput>("buttons")
+  /** The controller the browser reports, and which stick is driving, for display. */
+  const [pad, setPad] = useState<{ id: string; stick: Stick | null; value: number } | null>(null)
+  /** Driving with a stick: how far it is pushed, 0 to 1, which scales the drive voltage. */
+  const stickScale = useRef(1)
   const [gravityText, setGravityText] = useState("0")
   const setGravity = (v: number) => {
     const next = Math.max(-MAX_GRAVITY_VOLTS, Math.min(MAX_GRAVITY_VOLTS, Math.round(v * 1000) / 1000))
@@ -277,7 +287,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   }, [verifying, verifyHold, mechanismName, nt, axis, stop])
 
   /** Drives toward an end with voltage. With a target it stops there and marks it; without one it runs until released. */
-  const beginDrive = (dir: Dir, target?: number) => {
+  const beginDrive = (dir: Dir, target?: number, byStick = false) => {
     if (!verifying || !mechanismName || !supported) return
     endDrive(false)
     holdAt.current = null
@@ -366,7 +376,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       const ramp = Math.min(1, (now - startedAt) / RAMP_MS)
       const nearTarget = target !== undefined && Math.abs(target - pos) <= params.reachTolerance * SLOW_ZONE_TOLERANCES
       // On top of the gravity hold voltage, so driving up and down feel the same and a press never jumps.
-      const out = Math.round((holdVoltsAt(pos) + dir * volts * ramp * (nearTarget ? 0.5 : 1)) * 1000) / 1000
+      const scale = byStick ? stickScale.current : 1
+      const out = Math.round((holdVoltsAt(pos) + dir * volts * scale * ramp * (nearTarget ? 0.5 : 1)) * 1000) / 1000
       if (out !== sent) {
         sent = out
         sentVolts.current = out
@@ -374,7 +385,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         setAppliedVolts(out)
       }
 
-      if (Math.abs(pos - progressPos) > params.directionThreshold) {
+      if (Math.abs(pos - progressPos) > params.directionThreshold || scale < STALL_CHECK_MIN_STICK) {
         progressPos = pos
         stuckSince = null
       } else if (ramp >= 1) {
@@ -463,6 +474,70 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   })
 
   // On a desktop, W marks the upper end and Q the lower one while a drive button is held, like tapping Mark.
+  // Driving with a game controller: whichever stick leaves the deadband first drives, until it is back in it. Its
+  // vertical travel scales the drive voltage, up toward the upper end. Centering it releases the drive, like letting go
+  // of a button. After a drive stops by itself (an end, a soft limit, a stall, a fault), the stick has to be centered
+  // before it drives again.
+  const beginDriveRef = useRef(beginDrive)
+  beginDriveRef.current = beginDrive
+  const releaseDriveRef = useRef(releaseDrive)
+  releaseDriveRef.current = releaseDrive
+  const definedRef = useRef<{ mode: Mode; lower: number; upper: number; ok: boolean }>({ mode, lower: NaN, upper: NaN, ok: false })
+  useEffect(() => {
+    if (driveInput !== "controller") {
+      setPad(null)
+      return
+    }
+    let active: Stick | null = null
+    let drivingDir: Dir | null = null
+    let waitForCenter = false
+    let shown = ""
+    const id = window.setInterval(() => {
+      const sticks = readSticks()
+      let value = 0
+      if (sticks) {
+        if (active && sticks[active] === 0) active = null
+        if (!active) active = sticks.left !== 0 ? "left" : sticks.right !== 0 ? "right" : null
+        value = active ? sticks[active] : 0
+      } else active = null
+      const key = sticks ? `${sticks.id}|${active}|${value.toFixed(2)}` : ""
+      if (key !== shown) {
+        shown = key
+        setPad(sticks ? { id: sticks.id, stick: active, value } : null)
+      }
+      const canDrive = sessionRef.current === "verify" && !document.hidden
+      if (value === 0 || !canDrive) {
+        waitForCenter = false
+        if (drivingDir !== null) {
+          drivingDir = null
+          if (timer.current !== null) releaseDriveRef.current()
+        }
+        return
+      }
+      stickScale.current = Math.abs(value)
+      const dir: Dir = value > 0 ? 1 : -1
+      // A drive the stick started that has ended by itself: wait for the stick to come back to center.
+      if (drivingDir !== null && timer.current === null) {
+        drivingDir = null
+        waitForCenter = true
+      }
+      if (waitForCenter || drivingDir === dir) return
+      const d = definedRef.current
+      if (d.mode === "define" && !d.ok) return
+      drivingDir = dir
+      beginDriveRef.current(dir, d.mode === "define" ? (dir > 0 ? d.upper : d.lower) : undefined, true)
+      if (timer.current === null) {
+        // It did not start (already at that end, or past it).
+        drivingDir = null
+        waitForCenter = true
+      }
+    }, LOOP_MS)
+    return () => {
+      clearInterval(id)
+      if (drivingDir !== null && timer.current !== null) releaseDriveRef.current()
+    }
+  }, [driveInput])
+
   const markHereRef = useRef(markHere)
   markHereRef.current = markHere
   useEffect(() => {
@@ -558,6 +633,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         ? "The lower end must be below the upper end."
         : null
   const definedMatchesVerified = !definedError && verified.lower === lowerValue && verified.upper === upperValue
+  definedRef.current = { mode, lower: lowerValue, upper: upperValue, ok: definedError === null }
   const outsideSoft =
     !definedError &&
     ((softLower !== undefined && lowerValue < softLower) || (softUpper !== undefined && upperValue > softUpper))
@@ -766,6 +842,39 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground" id="drive-input-label">
+              Drive with
+            </span>
+            <div role="radiogroup" aria-labelledby="drive-input-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
+              {(
+                [
+                  ["buttons", "Hold buttons"],
+                  ["controller", "Game controller"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={driveInput === value}
+                  disabled={driving !== null || rampingDown}
+                  onClick={() => setDriveInput(value)}
+                  className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {driveInput === "controller" && (
+              <p className="text-xs leading-relaxed text-muted-foreground" data-pad="status">
+                {pad
+                  ? `${pad.id}. ${pad.stick ? `The ${pad.stick} stick is driving at ${Math.round(Math.abs(pad.value) * 100)}% of the drive voltage.` : "Push either stick up or down to drive."}`
+                  : "No controller found. Plug one in and press any of its buttons."}{" "}
+                {`Either stick drives, whichever moves first, up toward the upper end. Its travel past a ${Math.round(STICK_DEADBAND * 100)}% deadband scales the drive voltage, and centering it releases, like letting go of a button. After a drive stops by itself, center the stick before driving again. The buttons still work.`}
+              </p>
+            )}
+          </div>
           {mode === "find" ? (
             <div className="grid grid-cols-2 gap-2">
               <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
