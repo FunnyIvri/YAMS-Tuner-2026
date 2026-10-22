@@ -24,7 +24,8 @@ import {
   type MechanismKind,
 } from "@/lib/yams/topics"
 import {
-  DEFAULT_FLYWHEEL_MAX_RPM,
+  DEFAULT_FLYWHEEL_RANGE,
+  type FlywheelRange,
   DEFAULT_STALL_CURRENT,
   FLYWHEEL_IDLE_VELOCITY,
   STALL_DEBOUNCE_MS,
@@ -91,8 +92,9 @@ interface TunerApi {
   setChecklistConfirmed: (v: boolean) => void
   stallCurrent: number
   setStallCurrent: (amps: number) => void
-  flywheelMaxRpm: number
-  setFlywheelMaxRpm: (rpm: number) => void
+  /** A flywheel's slider range in RPM. Velocity setpoints are clamped to it. Starts at the safety default. */
+  flywheelRange: FlywheelRange
+  setFlywheelRange: (range: FlywheelRange) => void
 
   session: SessionPurpose | null
   starting: boolean
@@ -153,7 +155,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const [verified, setVerified] = useState<VerifiedRange>({ lower: null, upper: null })
   const [checklistConfirmed, setChecklistConfirmed] = useState(false)
   const [stallCurrent, setStallCurrent] = useState(DEFAULT_STALL_CURRENT)
-  const [flywheelMaxRpm, setFlywheelMaxRpm] = useState(DEFAULT_FLYWHEEL_MAX_RPM)
+  const [flywheelRange, setFlywheelRange] = useState<FlywheelRange>(DEFAULT_FLYWHEEL_RANGE)
   const [session, setSession] = useState<SessionPurpose | null>(null)
   const [lastStop, setLastStop] = useState<StopEvent | null>(null)
   const [currentAsWarning, setCurrentAsWarning] = useState(false)
@@ -515,8 +517,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     setChecklistConfirmed,
     stallCurrent,
     setStallCurrent,
-    flywheelMaxRpm,
-    setFlywheelMaxRpm,
+    flywheelRange,
+    setFlywheelRange,
     session,
     starting,
     startLiveTuning,

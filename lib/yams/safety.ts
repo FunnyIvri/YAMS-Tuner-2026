@@ -34,8 +34,14 @@ export const DEFAULT_STALL_CURRENT = 40
 export const STALL_DEBOUNCE_MS = 250
 /** A nonzero, negligible velocity setpoint: YAMS ignores exactly 0 and would fall back to position hold. */
 export const FLYWHEEL_IDLE_VELOCITY = 1e-6
-/** Velocity setpoints are clamped to this until it is changed in the Live tune step. */
+export interface FlywheelRange {
+  min: number
+  max: number
+}
+
+/** A flywheel's safety default: velocity setpoints are clamped to ±4000 RPM until the slider's range is changed. */
 export const DEFAULT_FLYWHEEL_MAX_RPM = 4000
+export const DEFAULT_FLYWHEEL_RANGE: FlywheelRange = { min: -DEFAULT_FLYWHEEL_MAX_RPM, max: DEFAULT_FLYWHEEL_MAX_RPM }
 
 export function needsRangeVerification(kind: MechanismKind, continuous: boolean) {
   if (kind === "flywheel") return false

@@ -13,7 +13,7 @@ import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-co
 import { Notice, Panel } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
-import { FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
+import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
 
 /** Why the Live tune step can't be used yet, or null once it can. */
 function useLiveTuneLock(): string | null {
@@ -87,6 +87,8 @@ function PositionControl() {
   const [draft, setDraft] = useState("")
   const [pending, setPending] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The slider's ends, once moved past the verified range or soft limits.
+  const [override, setOverride] = useState<{ min: number; max: number } | null>(null)
 
   const active = session === "tune"
   // A skipped verification leaves no verified range, so soft limits (if any) take over.
@@ -94,8 +96,11 @@ function PositionControl() {
   const softBounded = positional && !verifiedBounded && lower !== undefined && upper !== undefined && upper > lower
   const bounded = verifiedBounded || softBounded
   const boundLabel = verifiedBounded ? "verified range" : "soft limits"
-  const lo = verifiedBounded ? (verified.lower as number) : softBounded ? (lower as number) : -360
-  const hi = verifiedBounded ? (verified.upper as number) : softBounded ? (upper as number) : 360
+  const limitLo = verifiedBounded ? (verified.lower as number) : softBounded ? (lower as number) : -360
+  const limitHi = verifiedBounded ? (verified.upper as number) : softBounded ? (upper as number) : 360
+  // Setpoints are limited to the slider's range, which starts at those limits and can be moved past them.
+  const lo = bounded && override ? override.min : limitLo
+  const hi = bounded && override ? override.max : limitHi
   const unit = positionUnit(axis)
   const digits = axis === "linear" ? 3 : 1
   const maxStep = defaultMaxStep(axis)
@@ -128,7 +133,7 @@ function PositionControl() {
     let value = raw
     if (bounded && (raw < lo || raw > hi)) {
       value = Math.min(hi, Math.max(lo, raw))
-      setError(`Clamped to the ${boundLabel} (${formatPosition(lo, axis)} to ${formatPosition(hi, axis)}).`)
+      setError(`Clamped to the slider's range (${formatPosition(lo, axis)} to ${formatPosition(hi, axis)}).`)
     }
     const from = typeof setpoint === "number" ? setpoint : position
     if (!profiled && from !== undefined && Math.abs(value - from) > maxStep) {
@@ -192,8 +197,20 @@ function PositionControl() {
           label={`Position setpoint slider (${unit})`}
           min={sliderMin}
           max={sliderMax}
-          limitMin={bounded ? lo : undefined}
-          limitMax={bounded ? hi : undefined}
+          bounds={
+            bounded
+              ? {
+                  set: (min, max, edited) => {
+                    setOverride({ min, max })
+                    return edited < limitLo || edited > limitHi
+                      ? `Warning: ${formatPosition(edited, axis)} is outside the ${boundLabel} of ${formatPosition(limitLo, axis)} to ${formatPosition(limitHi, axis)}.`
+                      : null
+                  },
+                  reset: () => setOverride(null),
+                  changed: override !== null,
+                }
+              : undefined
+          }
           digits={digits}
           step={sliderStep}
           value={sliderValue}
@@ -253,7 +270,8 @@ function PositionControl() {
 }
 
 function VelocityControl() {
-  const { nt, mechanismName, session, flywheelMaxRpm, setFlywheelMaxRpm } = useTuner()
+  const { nt, mechanismName, session, flywheelRange, setFlywheelRange } = useTuner()
+  const { min: lo, max: hi } = flywheelRange
   const { velocity } = useAxisValues()
   const t = yamsTopics(mechanismName ?? "")
   const setpoint = useNtValue<number>(t.tuning.setpointVelocity)
@@ -261,14 +279,14 @@ function VelocityControl() {
   const [error, setError] = useState<string | null>(null)
   const active = session === "tune"
 
+  const clampRpm = (v: number) => Math.max(lo, Math.min(hi, v))
+
   const send = (raw: number) => {
     setError(null)
     if (!Number.isFinite(raw)) return setError("Enter a number.")
-    let value = raw
-    if (Math.abs(raw) > flywheelMaxRpm) {
-      value = Math.sign(raw) * flywheelMaxRpm
-      setError(`Clamped to the ${flywheelMaxRpm} RPM limit.`)
-    }
+    // Idle always gets through, so the flywheel can be stopped whatever the range.
+    const value = raw === 0 ? 0 : clampRpm(raw)
+    if (value !== raw) setError(`Clamped to the slider's range, ${lo} to ${hi} RPM.`)
     // YAMS ignores a velocity setpoint of exactly 0.
     nt.set(t.tuning.setpointVelocity, value === 0 ? FLYWHEEL_IDLE_VELOCITY : value)
     setDraft(String(Math.round(value)))
@@ -278,14 +296,15 @@ function VelocityControl() {
     // YAMS ignores a velocity setpoint of exactly 0.
     nt.set(t.tuning.setpointVelocity, value === 0 ? FLYWHEEL_IDLE_VELOCITY : value)
   }
-  const clampRpm = (v: number) => Math.max(-flywheelMaxRpm, Math.min(flywheelMaxRpm, v))
 
   const shownSetpoint = typeof setpoint === "number" ? (Math.abs(setpoint) < 0.01 ? 0 : setpoint) : undefined
   const draftNumber = Number(draft)
   const sliderValue = clampRpm(
     draft !== "" && Number.isFinite(draftNumber) ? draftNumber : (shownSetpoint ?? 0),
   )
-  const steps = [0.25, 0.5, 0.75, 1].map((f) => Math.round(flywheelMaxRpm * f))
+  // Presets are fractions of the fastest speed in the range, in whichever direction that is.
+  const top = Math.abs(hi) >= Math.abs(lo) ? hi : lo
+  const steps = [0.25, 0.5, 0.75, 1].map((f) => Math.round(clampRpm(top * f)))
 
   return (
     <>
@@ -328,10 +347,19 @@ function VelocityControl() {
         </form>
         <SliderRow
           label="Velocity setpoint slider (RPM)"
-          min={-flywheelMaxRpm}
-          max={flywheelMaxRpm}
-          limitMin={-flywheelMaxRpm}
-          limitMax={flywheelMaxRpm}
+          min={lo}
+          max={hi}
+          bounds={{
+            set: (min, max, edited) => {
+              setFlywheelRange({ min, max })
+              // The range can go past the safety default, but says so.
+              return Math.abs(edited) > DEFAULT_FLYWHEEL_MAX_RPM
+                ? `Warning: ${Math.round(edited)} RPM is outside the ±${DEFAULT_FLYWHEEL_MAX_RPM} RPM safety limit.`
+                : null
+            },
+            reset: () => setFlywheelRange(DEFAULT_FLYWHEEL_RANGE),
+            changed: lo !== DEFAULT_FLYWHEEL_RANGE.min || hi !== DEFAULT_FLYWHEEL_RANGE.max,
+          }}
           digits={0}
           step={10}
           value={sliderValue}
@@ -339,6 +367,9 @@ function VelocityControl() {
           onChange={(v) => setDraft(String(Math.round(v)))}
           onCommit={send}
         />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {`Setpoints are limited to the slider's range, which starts at the ±${DEFAULT_FLYWHEEL_MAX_RPM} RPM safety default. Click either end to change it.`}
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => send(0)}>
             Idle (0)
@@ -350,31 +381,13 @@ function VelocityControl() {
           ))}
         </div>
       </fieldset>
-      {/* Outside the fieldset, so it can be set before Live Tuning starts. */}
-      <div className="flex items-center gap-1 font-mono text-xs text-muted-foreground tabular">
-        <span>Max speed ±</span>
-        <EditableBound
-          label="Max speed"
-          value={flywheelMaxRpm}
-          digits={0}
-          step={50}
-          format={(v) => `${Math.round(v)} RPM`}
-          onSubmit={(v) => {
-            const next = Math.round(Math.abs(v))
-            if (next < 50) return "Max speed must be at least 50 RPM."
-            setFlywheelMaxRpm(next)
-            return null
-          }}
-        />
-        <span className="font-sans">Setpoints are clamped to this.</span>
-      </div>
       <SetpointAlternator
         id="vel-alt"
         active={active}
         unit="RPM"
         step={50}
-        defaultA={Math.round(flywheelMaxRpm * 0.25)}
-        defaultB={Math.round(flywheelMaxRpm * 0.75)}
+        defaultA={Math.round(clampRpm(top * 0.25))}
+        defaultB={Math.round(clampRpm(top * 0.75))}
         clamp={clampRpm}
         write={writeVelocity}
       />
@@ -395,6 +408,7 @@ function SliderRow({
   limitMin,
   limitMax,
   digits,
+  bounds,
 }: {
   label: string
   min: number
@@ -407,6 +421,12 @@ function SliderRow({
   format: (v: number) => string
   onChange: (v: number) => void
   onCommit: (v: number) => void
+  /**
+   * When given, the caller owns the slider's ends: min and max are its range, editing an end calls set with no
+   * limit other than min below max (set gets the value typed, and returns a note to show or null), and reset puts back its default. Otherwise the ends are this slider's own,
+   * within limitMin and limitMax.
+   */
+  bounds?: { set: (min: number, max: number, edited: number) => string | null; reset: () => void; changed: boolean }
 }) {
   const first = (v: number | readonly number[]) => (Array.isArray(v) ? v[0] : (v as number))
   const [follow, setFollow] = useState(false)
@@ -421,8 +441,8 @@ function SliderRow({
     if (limitMax !== undefined) next = Math.min(limitMax, next)
     return next
   }
-  const effMin = within(customMin ?? min)
-  const effMaxRaw = within(customMax ?? max)
+  const effMin = bounds ? min : within(customMin ?? min)
+  const effMaxRaw = bounds ? max : within(customMax ?? max)
   const effMax = effMaxRaw > effMin ? effMaxRaw : Math.max(effMin + step, max)
   const shown = Math.min(effMax, Math.max(effMin, value))
 
@@ -453,6 +473,10 @@ function SliderRow({
           step={step}
           format={format}
           onSubmit={(v) => {
+            if (bounds) {
+              if (v >= effMax) return `Minimum must be below ${format(effMax)}.`
+              return bounds.set(v, effMax, v)
+            }
             const next = within(v)
             if (next >= effMax) return `Minimum must be below ${format(effMax)}.`
             setCustomMin(next)
@@ -471,6 +495,10 @@ function SliderRow({
           format={format}
           align="end"
           onSubmit={(v) => {
+            if (bounds) {
+              if (v <= effMin) return `Maximum must be above ${format(effMin)}.`
+              return bounds.set(effMin, v, v)
+            }
             const next = within(v)
             if (next <= effMin) return `Maximum must be above ${format(effMin)}.`
             setCustomMax(next)
@@ -478,11 +506,12 @@ function SliderRow({
           }}
         />
       </div>
-      {(customMin !== null || customMax !== null) && (
+      {(bounds ? bounds.changed : customMin !== null || customMax !== null) && (
         <button
           type="button"
           className="self-start font-sans text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           onClick={() => {
+            if (bounds) return bounds.reset()
             setCustomMin(null)
             setCustomMax(null)
           }}
@@ -570,7 +599,7 @@ export function EditableBound({
         </button>
       )}
       {note && (
-        <span role="status" className="absolute top-full mt-1 whitespace-nowrap font-sans text-hazard">
+        <span role="status" className="pointer-events-none absolute top-full mt-1 whitespace-nowrap font-sans text-hazard">
           {note}
         </span>
       )}
