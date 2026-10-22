@@ -673,24 +673,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const holdClass =
     "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
 
-  return (
+  // Each part of the page, so the order can change while verifying: on a phone the drive buttons then sit right under
+  // the gauge, with the settings and their help below.
+  const rangeSetup = (
     <>
-      <TravelGauge
-        axis={axis}
-        position={position}
-        softLower={softLower}
-        softUpper={softUpper}
-        verifiedLower={verified.lower}
-        verifiedUpper={verified.upper}
-      />
-
-      {!supported && (
-        <Notice tone="warn">
-          This robot does not publish voltage/enabled and voltage/setpoint, which range verification uses to drive the mechanism. Update YAMS to a
-          version with voltage live tuning, or skip this step.
-        </Notice>
-      )}
-
       <div role="radiogroup" aria-label="How to set the range" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
         {(
           [
@@ -751,7 +737,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           {outsideSoft && <Notice tone="warn">Part of this range is outside the robot&apos;s soft limits. Driving stops at the soft limit.</Notice>}
         </div>
       )}
-
+    </>
+  )
+  const holdSetup = (
       <div className="flex flex-col gap-1.5">
         <span className="text-xs uppercase tracking-wide text-muted-foreground" id="hold-label">
           Between drives, hold the mechanism with
@@ -776,7 +764,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             </button>
           ))}
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className={`text-xs leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
           {verifyHold === "zeroVolts"
             ? gravityLoaded
               ? "The closed loop never runs: between drives the motor gets the gravity hold voltage below, 0 V unless you set one. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
@@ -856,7 +844,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </div>
         )}
       </div>
-
+  )
+  const driveInputSetup = (
       <div className="flex flex-col gap-1.5">
         <span className="text-xs uppercase tracking-wide text-muted-foreground" id="drive-input-label">
           Drive with
@@ -920,196 +909,121 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </div>
         )}
       </div>
-
-      {!verifying ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={begin} disabled={starting}>
-            <Play data-icon="inline-start" />
-            {rangeVerified ? "Re-verify range" : "Start verification"}
-          </Button>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {verifyHold === "zeroVolts"
-              ? gravityLoaded && gravityVolts !== 0
-                ? "Applies the gravity hold voltage to start with. More voltage is only applied while you hold a drive button."
-                : "Applies 0 V to start with. Voltage is only applied while you hold a drive button."
-              : "Holds the mechanism where it is with the closed loop. Voltage is only applied while you hold a drive button."}
-          </p>
-          {!rangeVerified && skipControl}
+  )
+  const driveSettings = (
+      <div className="flex flex-col gap-1.5 text-sm">
+        <span className="flex justify-between text-xs uppercase tracking-wide text-muted-foreground">
+          <label htmlFor="drive-volts">Drive voltage (magnitude)</label>
+          <span className="font-mono normal-case tabular">
+            {driving !== null
+              ? `Applying ${formatVolts(appliedVolts)}`
+              : rampingDown
+                ? `Ramping down ${formatVolts(appliedVolts)}`
+                : formatVolts(driveVolts)}
+          </span>
+        </span>
+        <input
+          id="drive-volts"
+          type="range"
+          className="accent-foreground"
+          min={minDriveVolts}
+          max={maxDriveVolts}
+          step={0.05}
+          value={Math.min(maxDriveVolts, Math.max(minDriveVolts, driveVolts))}
+          disabled={driving !== null}
+          onChange={(e) => setDriveVolts(Number(e.target.value))}
+        />
+        <div className="flex items-center justify-between font-mono text-xs text-muted-foreground tabular">
+          <EditableBound
+            label="Minimum drive voltage"
+            value={minDriveVolts}
+            digits={2}
+            step={0.05}
+            format={formatVolts}
+            onSubmit={(v) => {
+              const next = Math.max(MIN_DRIVE_VOLTS, v)
+              if (next >= maxDriveVolts) return `Minimum must be below ${formatVolts(maxDriveVolts)}.`
+              setMinDriveVolts(next)
+              if (driveVolts < next) setDriveVolts(next)
+              return next !== v ? `Raised to ${formatVolts(next)}; drive voltage cannot go lower.` : null
+            }}
+          />
+          <EditableBound
+            label="Maximum drive voltage"
+            value={maxDriveVolts}
+            digits={2}
+            step={0.1}
+            format={formatVolts}
+            align="end"
+            onSubmit={(v) => {
+              const next = Math.min(HARD_LIMIT_VOLTS, v)
+              if (next <= minDriveVolts) return `Maximum must be above ${formatVolts(minDriveVolts)}.`
+              setMaxDriveVolts(next)
+              if (driveVolts > next) setDriveVolts(next)
+              return next !== v ? `Limited to ${formatVolts(next)}.` : null
+            }}
+          />
         </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {mode === "find" ? (
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
-                <ChevronLeft className="size-5" aria-hidden />
-                {`Hold: drive ${negLabel} (−${formatVolts(driveVolts)})`}
-              </button>
-              <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
-                {`Hold: drive ${posLabel} (+${formatVolts(driveVolts)})`}
-                <ChevronRight className="size-5" aria-hidden />
-              </button>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground" id="release-label">
+            When a drive button is released
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div role="radiogroup" aria-labelledby="release-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
+              {(
+                [
+                  ["cut", "Cut to 0 V"],
+                  ["ramp", "Ramp to 0 V"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={release === value}
+                  disabled={driving !== null || rampingDown}
+                  onClick={() => setRelease(value)}
+                  className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                {...holdProps(-1, () => beginDrive(-1, lowerValue))}
-                disabled={!verifying || !supported || definedError !== null}
-                className={holdClass}
-                data-active={driving === -1}
-              >
-                <ChevronLeft className="size-5" aria-hidden />
-                {definedError ? "Hold: drive to lower end" : `Hold: drive to ${fmt(lowerValue)}`}
-                <span className="font-mono text-xs opacity-70 tabular">{`−${formatVolts(driveVolts)}`}</span>
-              </button>
-              <button
-                type="button"
-                {...holdProps(1, () => beginDrive(1, upperValue))}
-                disabled={!verifying || !supported || definedError !== null}
-                className={holdClass}
-                data-active={driving === 1}
-              >
-                <span className="font-mono text-xs opacity-70 tabular">{`+${formatVolts(driveVolts)}`}</span>
-                {definedError ? "Hold: drive to upper end" : `Hold: drive to ${fmt(upperValue)}`}
-                <ChevronRight className="size-5" aria-hidden />
-              </button>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5 text-sm">
-            <span className="flex justify-between text-xs uppercase tracking-wide text-muted-foreground">
-              <label htmlFor="drive-volts">Drive voltage (magnitude)</label>
-              <span className="font-mono normal-case tabular">
-                {driving !== null
-                  ? `Applying ${formatVolts(appliedVolts)}`
-                  : rampingDown
-                    ? `Ramping down ${formatVolts(appliedVolts)}`
-                    : formatVolts(driveVolts)}
-              </span>
-            </span>
-            <input
-              id="drive-volts"
-              type="range"
-              className="accent-foreground"
-              min={minDriveVolts}
-              max={maxDriveVolts}
-              step={0.05}
-              value={Math.min(maxDriveVolts, Math.max(minDriveVolts, driveVolts))}
-              disabled={driving !== null}
-              onChange={(e) => setDriveVolts(Number(e.target.value))}
-            />
-            <div className="flex items-center justify-between font-mono text-xs text-muted-foreground tabular">
-              <EditableBound
-                label="Minimum drive voltage"
-                value={minDriveVolts}
-                digits={2}
-                step={0.05}
-                format={formatVolts}
-                onSubmit={(v) => {
-                  const next = Math.max(MIN_DRIVE_VOLTS, v)
-                  if (next >= maxDriveVolts) return `Minimum must be below ${formatVolts(maxDriveVolts)}.`
-                  setMinDriveVolts(next)
-                  if (driveVolts < next) setDriveVolts(next)
-                  return next !== v ? `Raised to ${formatVolts(next)}; drive voltage cannot go lower.` : null
-                }}
-              />
-              <EditableBound
-                label="Maximum drive voltage"
-                value={maxDriveVolts}
-                digits={2}
-                step={0.1}
-                format={formatVolts}
-                align="end"
-                onSubmit={(v) => {
-                  const next = Math.min(HARD_LIMIT_VOLTS, v)
-                  if (next <= minDriveVolts) return `Maximum must be above ${formatVolts(minDriveVolts)}.`
-                  setMaxDriveVolts(next)
-                  if (driveVolts > next) setDriveVolts(next)
-                  return next !== v ? `Limited to ${formatVolts(next)}.` : null
-                }}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground" id="release-label">
-                When a drive button is released
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                <div role="radiogroup" aria-labelledby="release-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
-                  {(
-                    [
-                      ["cut", "Cut to 0 V"],
-                      ["ramp", "Ramp to 0 V"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="radio"
-                      aria-checked={release === value}
-                      disabled={driving !== null || rampingDown}
-                      onClick={() => setRelease(value)}
-                      className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {release === "ramp" && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <Input
-                      inputMode="decimal"
-                      aria-label="Ramp down rate in volts per second"
-                      className="h-8 w-20 font-mono"
-                      value={rampDownText}
-                      disabled={driving !== null || rampingDown}
-                      onChange={(e) => setRampDownText(e.target.value)}
-                      onBlur={() => {
-                        const v = Number.parseFloat(rampDownText)
-                        const next = Number.isFinite(v) ? Math.max(MIN_RAMP_DOWN_VOLTS_PER_SECOND, v) : rampDownRate
-                        setRampDownRate(next)
-                        setRampDownText(String(next))
-                      }}
-                      onKeyDown={blurOnEnter}
-                    />
-                    <span className="text-muted-foreground">V/s</span>
-                  </label>
-                )}
-              </div>
-              {release === "ramp" && (
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${(driveVolts / rampDownRate).toFixed(2)} s, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
-                </p>
-              )}
-            </div>
+            {release === "ramp" && (
+              <label className="flex items-center gap-2 text-sm">
+                <Input
+                  inputMode="decimal"
+                  aria-label="Ramp down rate in volts per second"
+                  className="h-8 w-20 font-mono"
+                  value={rampDownText}
+                  disabled={driving !== null || rampingDown}
+                  onChange={(e) => setRampDownText(e.target.value)}
+                  onBlur={() => {
+                    const v = Number.parseFloat(rampDownText)
+                    const next = Number.isFinite(v) ? Math.max(MIN_RAMP_DOWN_VOLTS_PER_SECOND, v) : rampDownRate
+                    setRampDownRate(next)
+                    setRampDownText(String(next))
+                  }}
+                  onKeyDown={blurOnEnter}
+                />
+                <span className="text-muted-foreground">V/s</span>
+              </label>
+            )}
+          </div>
+          {release === "ramp" && (
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Driving down applies this as negative voltage and driving up as positive, so a correctly inverted mechanism moves down on
-              negative volts. Use the least voltage that moves the mechanism. Elevators and arms may need more to drive against gravity than with it.
+              {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${(driveVolts / rampDownRate).toFixed(2)} s, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
             </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" {...markProps("lower")} disabled={position === undefined}>
-              <Flag data-icon="inline-start" />
-              {verified.lower === null ? "Mark lower end here" : `Lower: ${fmt(verified.lower)}`}
-            </Button>
-            <Button variant="outline" {...markProps("upper")} disabled={position === undefined}>
-              <Flag data-icon="inline-start" />
-              {verified.upper === null ? "Mark upper end here" : `Upper: ${fmt(verified.upper)}`}
-            </Button>
-          </div>
-          <p className="hidden text-xs leading-relaxed text-muted-foreground pointer-fine:block">
-            While holding a drive button, press <Kbd>W</Kbd> to mark the upper end here or <Kbd>Q</Kbd> to mark the lower end.
-          </p>
-          <Button
-            onClick={() => stop("Range of motion verified")}
-            disabled={verified.lower === null || verified.upper === null || driving !== null || rampingDown}
-          >
-            Finish verification
-          </Button>
-          {!rangeVerified && <div className="flex justify-end">{skipControl}</div>}
+          )}
         </div>
-      )}
-
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Driving down applies this as negative voltage and driving up as positive, so a correctly inverted mechanism moves down on
+          negative volts. Use the least voltage that moves the mechanism. Elevators and arms may need more to drive against gravity than with it.
+        </p>
+      </div>
+  )
+  const notices = (
+    <>
       {note && <Notice tone={note.tone === "warn" ? "warn" : undefined}>{note.text}</Notice>}
       {error && <Notice tone="danger">{error}</Notice>}
       {!verifying && (verified.lower === null) !== (verified.upper === null) && (
@@ -1117,6 +1031,116 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       )}
       {rangeVerified && !verifying && verified.lower !== null && verified.upper !== null && (
         <Notice>{`Verified range ${fmt(verified.lower)} to ${fmt(verified.upper)}. Live Tuning stops if the mechanism leaves it.`}</Notice>
+      )}
+    </>
+  )
+
+  return (
+    <>
+      <TravelGauge
+        axis={axis}
+        position={position}
+        softLower={softLower}
+        softUpper={softUpper}
+        verifiedLower={verified.lower}
+        verifiedUpper={verified.upper}
+      />
+
+      {!supported && (
+        <Notice tone="warn">
+          This robot does not publish voltage/enabled and voltage/setpoint, which range verification uses to drive the mechanism. Update YAMS to a
+          version with voltage live tuning, or skip this step.
+        </Notice>
+      )}
+
+      {verifying ? (
+        <>
+          <div className="flex flex-col gap-3">
+            {mode === "find" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
+                  <ChevronLeft className="size-5" aria-hidden />
+                  {`Hold: drive ${negLabel} (−${formatVolts(driveVolts)})`}
+                </button>
+                <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
+                  {`Hold: drive ${posLabel} (+${formatVolts(driveVolts)})`}
+                  <ChevronRight className="size-5" aria-hidden />
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  {...holdProps(-1, () => beginDrive(-1, lowerValue))}
+                  disabled={!verifying || !supported || definedError !== null}
+                  className={holdClass}
+                  data-active={driving === -1}
+                >
+                  <ChevronLeft className="size-5" aria-hidden />
+                  {definedError ? "Hold: drive to lower end" : `Hold: drive to ${fmt(lowerValue)}`}
+                  <span className="font-mono text-xs opacity-70 tabular">{`−${formatVolts(driveVolts)}`}</span>
+                </button>
+                <button
+                  type="button"
+                  {...holdProps(1, () => beginDrive(1, upperValue))}
+                  disabled={!verifying || !supported || definedError !== null}
+                  className={holdClass}
+                  data-active={driving === 1}
+                >
+                  <span className="font-mono text-xs opacity-70 tabular">{`+${formatVolts(driveVolts)}`}</span>
+                  {definedError ? "Hold: drive to upper end" : `Hold: drive to ${fmt(upperValue)}`}
+                  <ChevronRight className="size-5" aria-hidden />
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" className="h-auto min-h-9 whitespace-normal py-2" {...markProps("lower")} disabled={position === undefined}>
+                <Flag data-icon="inline-start" />
+                {verified.lower === null ? "Mark lower end here" : `Lower: ${fmt(verified.lower)}`}
+              </Button>
+              <Button variant="outline" className="h-auto min-h-9 whitespace-normal py-2" {...markProps("upper")} disabled={position === undefined}>
+                <Flag data-icon="inline-start" />
+                {verified.upper === null ? "Mark upper end here" : `Upper: ${fmt(verified.upper)}`}
+              </Button>
+            </div>
+            <p className="hidden text-xs leading-relaxed text-muted-foreground pointer-fine:block">
+              While holding a drive button, press <Kbd>W</Kbd> to mark the upper end here or <Kbd>Q</Kbd> to mark the lower end.
+            </p>
+            <Button
+              onClick={() => stop("Range of motion verified")}
+              disabled={verified.lower === null || verified.upper === null || driving !== null || rampingDown}
+            >
+              Finish verification
+            </Button>
+            {!rangeVerified && <div className="flex justify-end">{skipControl}</div>}
+          </div>
+          {notices}
+          {driveSettings}
+          {rangeSetup}
+          {holdSetup}
+          {driveInputSetup}
+        </>
+      ) : (
+        <>
+          {rangeSetup}
+          {holdSetup}
+          {driveInputSetup}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={begin} disabled={starting}>
+              <Play data-icon="inline-start" />
+              {rangeVerified ? "Re-verify range" : "Start verification"}
+            </Button>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {verifyHold === "zeroVolts"
+                ? gravityLoaded && gravityVolts !== 0
+                  ? "Applies the gravity hold voltage to start with. More voltage is only applied while you hold a drive button."
+                  : "Applies 0 V to start with. Voltage is only applied while you hold a drive button."
+                : "Holds the mechanism where it is with the closed loop. Voltage is only applied while you hold a drive button."}
+            </p>
+            {!rangeVerified && skipControl}
+          </div>
+          {notices}
+        </>
       )}
     </>
   )
