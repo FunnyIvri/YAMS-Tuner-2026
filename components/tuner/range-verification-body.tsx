@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Flag, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
-import { Notice } from "@/components/tuner/panel"
+import { Kbd, Notice } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
@@ -285,6 +285,24 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     },
   })
 
+  // On a desktop, W marks the upper end and Q the lower one while a drive button is held, like tapping Mark.
+  const markHereRef = useRef(markHere)
+  markHereRef.current = markHere
+  useEffect(() => {
+    if (driving === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))) return
+      const key = e.key.toLowerCase()
+      if (key !== "w" && key !== "q") return
+      e.preventDefault()
+      markHereRef.current(key === "w" ? "upper" : "lower")
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [driving])
+
   /** Switching to the define tab starts from whatever range has already been found. */
   const selectMode = (next: Mode) => {
     if (next === "define") {
@@ -338,7 +356,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     setError(await startLiveTuning("verify"))
   }
 
-  const holdProps = (onStart: () => void) => ({
+  const holdProps = (dir: Dir, onStart: () => void) => ({
     disabled: !verifying || !supported,
     onPointerDown: (e: React.PointerEvent) => {
       e.currentTarget.setPointerCapture(e.pointerId)
@@ -347,7 +365,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     onPointerUp: () => endDrive(),
     onPointerCancel: () => endDrive(),
     onLostPointerCapture: () => endDrive(),
-    onBlur: () => endDrive(),
+    // Pressing the other drive button moves focus off this one. Only this button's own drive stops then, not the new one.
+    onBlur: () => {
+      if (lastDrive.current?.dir === dir && lastDrive.current.endedAt === null) endDrive()
+    },
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   })
 
@@ -461,11 +482,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         <div className="flex flex-col gap-3">
           {mode === "find" ? (
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" {...holdProps(() => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
+              <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
                 <ChevronLeft className="size-5" aria-hidden />
                 {`Hold: drive ${negLabel} (−${formatVolts(driveVolts)})`}
               </button>
-              <button type="button" {...holdProps(() => beginDrive(1))} className={holdClass} data-active={driving === 1}>
+              <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
                 {`Hold: drive ${posLabel} (+${formatVolts(driveVolts)})`}
                 <ChevronRight className="size-5" aria-hidden />
               </button>
@@ -474,7 +495,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                {...holdProps(() => beginDrive(-1, lowerValue))}
+                {...holdProps(-1, () => beginDrive(-1, lowerValue))}
                 disabled={!verifying || !supported || definedError !== null}
                 className={holdClass}
                 data-active={driving === -1}
@@ -485,7 +506,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
               </button>
               <button
                 type="button"
-                {...holdProps(() => beginDrive(1, upperValue))}
+                {...holdProps(1, () => beginDrive(1, upperValue))}
                 disabled={!verifying || !supported || definedError !== null}
                 className={holdClass}
                 data-active={driving === 1}
@@ -562,6 +583,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
               {verified.upper === null ? "Mark upper end here" : `Upper: ${fmt(verified.upper)}`}
             </Button>
           </div>
+          <p className="hidden text-xs leading-relaxed text-muted-foreground pointer-fine:block">
+            While holding a drive button, press <Kbd>W</Kbd> to mark the upper end here or <Kbd>Q</Kbd> to mark the lower end.
+          </p>
           <Button
             onClick={() => stop("Range of motion verified")}
             disabled={verified.lower === null || verified.upper === null || driving !== null}
