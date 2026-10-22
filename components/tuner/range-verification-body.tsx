@@ -729,7 +729,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
               />
             </label>
           </div>
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <p className={`text-sm leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
             {verified.lower !== null || verified.upper !== null
               ? "Starts from the range already found. Edits apply when you click away or press Enter. Narrowing an end applies right away; widening one past reached travel means driving the mechanism there to test it."
               : "Each end only counts once the mechanism has actually been driven there."}{" "}
@@ -834,7 +834,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
                 </>
               )}
             </div>
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p className={`text-xs leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
               {kind === "arm"
                 ? "The voltage that holds the arm level, like kG: it is scaled by the cosine of the angle (0° is level), so the arm stays put wherever you let go. Start verification, then raise it a little at a time until the arm stops sagging between drives, and lower it if the arm creeps up. Drives add to it, and a ramped release ramps down to it."
                 : "The voltage that holds the elevator up, like kG. Start verification, then raise it a little at a time until the elevator stops sagging between drives, and lower it if the elevator creeps up. Drives add to it, and a ramped release ramps down to it."}
@@ -906,8 +906,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             <p className="text-xs leading-relaxed text-muted-foreground" data-pad="status">
               {pad
                 ? `${pad.id}, read as ${PAD_TYPES.find((t) => t.value === pad.type)?.label ?? pad.type}${pad.standard ? " (standard layout)" : ""}. ${pad.stick ? (verifying ? `The ${pad.stick} stick is driving at ${Math.round(Math.abs(pad.value) * 100)}% of the drive voltage.` : `The ${pad.stick} stick is pushed ${pad.value > 0 ? "up" : "down"} ${Math.round(Math.abs(pad.value) * 100)}%. It drives once verification starts.`) : "Push either stick up or down to drive."}`
-                : "No controller found. Plug one in and press any of its buttons."}{" "}
-              {`Before driving, push each stick up: its bar must go up. If it goes down, as some Xbox controllers read, tick Invert up and down. Either stick drives, whichever moves first, up toward the upper end. Its travel past a ${Math.round(STICK_DEADBAND * 100)}% deadband scales the drive voltage, and centering it releases, like letting go of a button. After a drive stops by itself, center the stick before driving again. The buttons still work.`}
+                : "No controller found. Plug one in and press any of its buttons."}
+              <span className={verifying ? "hidden" : ""}>{` Before driving, push each stick up: its bar must go up. If it goes down, as some Xbox controllers read, tick Invert up and down. Either stick drives, whichever moves first, up toward the upper end. Its travel past a ${Math.round(STICK_DEADBAND * 100)}% deadband scales the drive voltage, and centering it releases, like letting go of a button. After a drive stops by itself, center the stick before driving again. The buttons still work.`}</span>
             </p>
           </div>
         )}
@@ -967,63 +967,62 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             }}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground" id="release-label">
-            When a drive button is released
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <div role="radiogroup" aria-labelledby="release-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
-              {(
-                [
-                  ["cut", "Cut to 0 V"],
-                  ["ramp", "Ramp to 0 V"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={release === value}
-                  disabled={driving !== null || rampingDown}
-                  onClick={() => setRelease(value)}
-                  className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {release === "ramp" && (
-              <label className="flex items-center gap-2 text-sm">
-                <Input
-                  inputMode="decimal"
-                  aria-label="Ramp down rate in volts per second"
-                  className="h-8 w-20 font-mono"
-                  value={rampDownText}
-                  disabled={driving !== null || rampingDown}
-                  onChange={(e) => setRampDownText(e.target.value)}
-                  onBlur={() => {
-                    const v = Number.parseFloat(rampDownText)
-                    const next = Number.isFinite(v) ? Math.max(MIN_RAMP_DOWN_VOLTS_PER_SECOND, v) : rampDownRate
-                    setRampDownRate(next)
-                    setRampDownText(String(next))
-                  }}
-                  onKeyDown={blurOnEnter}
-                />
-                <span className="text-muted-foreground">V/s</span>
-              </label>
-            )}
-          </div>
-          {release === "ramp" && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
-            </p>
-          )}
-        </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Driving down applies this as negative voltage and driving up as positive, so a correctly inverted mechanism moves down on
-          negative volts. Use the least voltage that moves the mechanism. Elevators and arms may need more to drive against gravity than with it.
-        </p>
       </div>
+  )
+  // How a drive ends, chosen before verifying starts and still changeable while verifying.
+  const releaseSetup = (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground" id="release-label">
+        When a drive button is released
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="radiogroup" aria-labelledby="release-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
+          {(
+            [
+              ["cut", "Cut to 0 V"],
+              ["ramp", "Ramp to 0 V"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={release === value}
+              disabled={driving !== null || rampingDown}
+              onClick={() => setRelease(value)}
+              className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {release === "ramp" && (
+          <label className="flex items-center gap-2 text-sm">
+            <Input
+              inputMode="decimal"
+              aria-label="Ramp down rate in volts per second"
+              className="h-8 w-20 font-mono"
+              value={rampDownText}
+              disabled={driving !== null || rampingDown}
+              onChange={(e) => setRampDownText(e.target.value)}
+              onBlur={() => {
+                const v = Number.parseFloat(rampDownText)
+                const next = Number.isFinite(v) ? Math.max(MIN_RAMP_DOWN_VOLTS_PER_SECOND, v) : rampDownRate
+                setRampDownRate(next)
+                setRampDownText(String(next))
+              }}
+              onKeyDown={blurOnEnter}
+            />
+            <span className="text-muted-foreground">V/s</span>
+          </label>
+        )}
+      </div>
+      {release === "ramp" && (
+        <p className={`text-xs leading-relaxed text-muted-foreground ${verifying ? "hidden" : ""}`}>
+          {`Releasing a drive button lowers the voltage to 0 at ${rampDownRate} V/s, so from ${formatVolts(driveVolts)} it takes ${formatDuration(driveVolts / rampDownRate)}, then holds the position. The mechanism keeps moving while it ramps down. Faults, ends, soft limits, stalls and marking still cut the voltage at once.`}
+        </p>
+      )}
+    </div>
   )
   const notices = (
     <>
@@ -1119,6 +1118,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </div>
           {notices}
           {driveSettings}
+          {releaseSetup}
           {rangeSetup}
           {holdSetup}
           {driveInputSetup}
@@ -1128,6 +1128,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           {rangeSetup}
           {holdSetup}
           {driveInputSetup}
+          {releaseSetup}
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={begin} disabled={starting}>
               <Play data-icon="inline-start" />
@@ -1138,7 +1139,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
                 ? gravityLoaded && gravityVolts !== 0
                   ? "Applies the gravity hold voltage to start with. More voltage is only applied while you hold a drive button."
                   : "Applies 0 V to start with. Voltage is only applied while you hold a drive button."
-                : "Holds the mechanism where it is with the closed loop. Voltage is only applied while you hold a drive button."}
+                : "Holds the mechanism where it is with the closed loop. Voltage is only applied while you hold a drive button."}{" "}
+              Driving down applies negative voltage and driving up positive, so a correctly inverted mechanism moves down on negative volts.
+              Use the least voltage that moves the mechanism. Elevators and arms may need more to drive against gravity than with it.
             </p>
             {!rangeVerified && skipControl}
           </div>
