@@ -216,16 +216,19 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         }
       } else overCurrentSince = null
 
+      // The robot won't drive past its own soft limit, so reaching one is that end of travel: mark it there.
       const softLimit = dir > 0 ? reader.upperLimit() : reader.lowerLimit()
       if (softLimit !== undefined && (softLimit - pos) * dir <= params.reachTolerance) {
         endDrive()
-        setNote({
-          tone: "warn",
-          text:
-            target !== undefined
-              ? `Stopped at the robot's ${sideOf(dir)} soft limit (${fmt(softLimit)}) before reaching the defined end. Narrow the defined range or mark this point.`
-              : `Reached the robot's ${sideOf(dir)} soft limit. If this is the true end of travel, mark it.`,
-        })
+        if (markValue(sideOf(dir), softLimit) === null) {
+          setNote({
+            tone: "info",
+            text:
+              target !== undefined
+                ? `Stopped at the robot's ${sideOf(dir)} soft limit (${fmt(softLimit)}) before reaching the defined end, and marked it as the ${sideOf(dir)} end.`
+                : `Reached the robot's ${sideOf(dir)} soft limit and marked it as the ${sideOf(dir)} end (${fmt(softLimit)}).`,
+          })
+        }
         return
       }
 
@@ -257,9 +260,30 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     }, 20)
   }
 
+  /**
+   * Marks an end where the mechanism is now. It works while a drive button is held, so on a touch screen one finger
+   * can drive toward an end while another marks it. Marking stops the drive there.
+   */
   const markHere = (side: Side) => {
-    if (position !== undefined) markValue(side, position)
+    const now = mechanismName ? axisReader(nt, mechanismName, axis).position() : undefined
+    const value = now ?? position
+    if (value === undefined) return
+    if (timer.current !== null) endDrive()
+    markValue(side, value)
   }
+  // A tap is handled on touch down, since a second finger's tap may never become a click while the first is held.
+  const markedOnPointer = useRef(0)
+  const markProps = (side: Side) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.pointerType === "mouse") return
+      markedOnPointer.current = Date.now()
+      markHere(side)
+    },
+    onClick: () => {
+      if (Date.now() - markedOnPointer.current < 1000) return
+      markHere(side)
+    },
+  })
 
   /** Switching to the define tab starts from whatever range has already been found. */
   const selectMode = (next: Mode) => {
@@ -529,11 +553,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" onClick={() => markHere("lower")} disabled={driving !== null || position === undefined}>
+            <Button variant="outline" {...markProps("lower")} disabled={position === undefined}>
               <Flag data-icon="inline-start" />
               {verified.lower === null ? "Mark lower end here" : `Lower: ${fmt(verified.lower)}`}
             </Button>
-            <Button variant="outline" onClick={() => markHere("upper")} disabled={driving !== null || position === undefined}>
+            <Button variant="outline" {...markProps("upper")} disabled={position === undefined}>
               <Flag data-icon="inline-start" />
               {verified.upper === null ? "Mark upper end here" : `Upper: ${fmt(verified.upper)}`}
             </Button>

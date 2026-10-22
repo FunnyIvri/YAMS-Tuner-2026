@@ -432,6 +432,9 @@ function SliderRow({
   const [follow, setFollow] = useState(false)
   const [customMin, setCustomMin] = useState<number | null>(null)
   const [customMax, setCustomMax] = useState<number | null>(null)
+  // The ends' notes, shown one under the other below the slider so two long warnings never overlap.
+  const [minNote, setMinNote] = useState<string | null>(null)
+  const [maxNote, setMaxNote] = useState<string | null>(null)
   const lastSent = useRef(0)
   const switchId = useId()
 
@@ -472,6 +475,7 @@ function SliderRow({
           digits={digits}
           step={step}
           format={format}
+          onNote={setMinNote}
           onSubmit={(v) => {
             if (bounds) {
               if (v >= effMax) return `Minimum must be below ${format(effMax)}.`
@@ -494,6 +498,7 @@ function SliderRow({
           step={step}
           format={format}
           align="end"
+          onNote={setMaxNote}
           onSubmit={(v) => {
             if (bounds) {
               if (v <= effMin) return `Maximum must be above ${format(effMin)}.`
@@ -506,11 +511,19 @@ function SliderRow({
           }}
         />
       </div>
+      {(minNote || maxNote) && (
+        <div role="status" className="flex flex-col gap-0.5 text-xs leading-relaxed text-hazard">
+          {minNote && <p>{minNote}</p>}
+          {maxNote && <p>{maxNote}</p>}
+        </div>
+      )}
       {(bounds ? bounds.changed : customMin !== null || customMax !== null) && (
         <button
           type="button"
           className="self-start font-sans text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           onClick={() => {
+            setMinNote(null)
+            setMaxNote(null)
             if (bounds) return bounds.reset()
             setCustomMin(null)
             setCustomMax(null)
@@ -531,6 +544,7 @@ export function EditableBound({
   format,
   align = "start",
   onSubmit,
+  onNote,
 }: {
   label: string
   value: number
@@ -539,6 +553,8 @@ export function EditableBound({
   format: (v: number) => string
   align?: "start" | "end"
   onSubmit: (v: number) => string | null
+  /** When given, the note from onSubmit goes here for the parent to show, instead of floating under this bound. */
+  onNote?: (note: string | null) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState("")
@@ -556,7 +572,9 @@ export function EditableBound({
       setNote(null)
       return
     }
-    setNote(onSubmit(parsed))
+    const next = onSubmit(parsed)
+    if (onNote) onNote(next)
+    else setNote(next)
   }
 
   return (
