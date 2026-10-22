@@ -369,15 +369,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         endDrive()
         return
       }
-      if ((pos - startPos) * dir < -params.directionThreshold) {
-        endDrive(false)
-        lastDrive.current = null
-        stop(
-          `Mechanism moved opposite to the commanded voltage. Either gravity is stronger than ${formatVolts(volts)} (raise the drive voltage slightly) or the motor/encoder inversion is wrong. Re-run the inversion check if unsure.`,
-          true,
-        )
-        return
-      }
+      // Moving against the drive is not a fault here: the inversion check already proved the direction, and a falling
+      // mechanism keeps falling for a moment after a drive up starts.
       if (target !== undefined && (target - pos) * dir <= params.reachTolerance) {
         endDrive()
         if (markValue(sideOf(dir), target) === null) {
@@ -1084,9 +1077,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
 
       {supported && position !== undefined && (softLower === undefined || softUpper === undefined) && (
         <Notice tone="warn">
-          {verifying
-            ? `No ${softLower === undefined && softUpper === undefined ? "soft limits" : `${softLower === undefined ? "lower" : "upper"} soft limit`}: only a stall, over-current or letting go stops a drive ${softLower === undefined && softUpper === undefined ? "at either end" : `at the ${softLower === undefined ? "lower" : "upper"} end`}.`
-            : `The robot publishes no ${softLower === undefined && softUpper === undefined ? "soft limits" : `${softLower === undefined ? "lower" : "upper"} soft limit`}, so nothing stops the mechanism by position ${softLower === undefined && softUpper === undefined ? "at either end" : `at the ${softLower === undefined ? "lower" : "upper"} end`} while verifying. Only a stall, over-current, letting go or Stop ends a drive there, so finding that end means driving into the hard stop. Use a low drive voltage and Cut to 0 V, or set soft limits in the mechanism's YAMS config first.`}
+          {`No ${softLower === undefined && softUpper === undefined ? "soft limits" : `${softLower === undefined ? "lower" : "upper"} soft limit`}: drives stop only at a hard stop, on over-current or when you let go.`}
         </Notice>
       )}
 

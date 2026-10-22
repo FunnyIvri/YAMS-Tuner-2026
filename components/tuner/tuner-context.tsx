@@ -394,12 +394,13 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         showCurrentWarning(null)
       }
 
-      if (cur.positional) {
+      // Verifying the range may go outside it: finding where the mechanism really ends is the point.
+      if (cur.positional && cur.session !== "verify") {
         const pos = reader.position()
         if (pos === undefined) return
         const tol = overshootTolerance(cur.axis)
-        // Once a range is verified it bounds travel; otherwise (verifying, or simulation) the robot's soft limits do.
-        const useVerified = cur.session !== "verify" && cur.verified.lower !== null && cur.verified.upper !== null
+        // Once a range is verified it bounds travel; otherwise the robot's soft limits do.
+        const useVerified = cur.verified.lower !== null && cur.verified.upper !== null
         const lower = useVerified ? cur.verified.lower : reader.lowerLimit()
         const upper = useVerified ? cur.verified.upper : reader.upperLimit()
         const below = lower !== null && lower !== undefined && pos < lower - tol
@@ -413,7 +414,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
             )
           } else stop("Mechanism left its allowed range of motion.", true)
         } else showWarning(null)
-      }
+      } else showWarning(null)
     }, 20)
     return () => clearInterval(id)
   }, [session, nt, stop])
