@@ -1082,6 +1082,14 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         </Notice>
       )}
 
+      {supported && position !== undefined && (softLower === undefined || softUpper === undefined) && (
+        <Notice tone="warn">
+          {verifying
+            ? `No ${softLower === undefined && softUpper === undefined ? "soft limits" : `${softLower === undefined ? "lower" : "upper"} soft limit`}: only a stall, over-current or letting go stops a drive ${softLower === undefined && softUpper === undefined ? "at either end" : `at the ${softLower === undefined ? "lower" : "upper"} end`}.`
+            : `The robot publishes no ${softLower === undefined && softUpper === undefined ? "soft limits" : `${softLower === undefined ? "lower" : "upper"} soft limit`}, so nothing stops the mechanism by position ${softLower === undefined && softUpper === undefined ? "at either end" : `at the ${softLower === undefined ? "lower" : "upper"} end`} while verifying. Only a stall, over-current, letting go or Stop ends a drive there, so finding that end means driving into the hard stop. Use a low drive voltage and Cut to 0 V, or set soft limits in the mechanism's YAMS config first.`}
+        </Notice>
+      )}
+
       {verifying ? (
         <>
           <div className="flex flex-col gap-3">
