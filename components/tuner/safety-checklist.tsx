@@ -23,7 +23,7 @@ export function SafetyChecklist() {
 }
 
 function ChecklistBody() {
-  const { kind, continuous, checklistConfirmed, setChecklistConfirmed, stallCurrent, setStallCurrent, flywheelMaxRpm, setFlywheelMaxRpm, session } =
+  const { kind, continuous, checklistConfirmed, setChecklistConfirmed, stallCurrent, setStallCurrent, session } =
     useTuner()
   const category = kind === "flywheel" ? "flywheel" : needsRangeVerification(kind, continuous) ? "positional" : "continuous"
   const items = PRE_MOTION_CHECKLIST[category]
@@ -69,21 +69,6 @@ function ChecklistBody() {
             }}
           />
         </Field>
-        {kind === "flywheel" && (
-          <Field label="Max speed (RPM)" htmlFor="maxrpm" hint="Velocity setpoints are clamped to this.">
-            <Input
-              id="maxrpm"
-              type="number"
-              min={0}
-              className="font-mono"
-              value={flywheelMaxRpm}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                if (Number.isFinite(v) && v >= 0) setFlywheelMaxRpm(v)
-              }}
-            />
-          </Field>
-        )}
       </div>
     </>
   )

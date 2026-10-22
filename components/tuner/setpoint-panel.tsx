@@ -253,7 +253,7 @@ function PositionControl() {
 }
 
 function VelocityControl() {
-  const { nt, mechanismName, session, flywheelMaxRpm } = useTuner()
+  const { nt, mechanismName, session, flywheelMaxRpm, setFlywheelMaxRpm } = useTuner()
   const { velocity } = useAxisValues()
   const t = yamsTopics(mechanismName ?? "")
   const setpoint = useNtValue<number>(t.tuning.setpointVelocity)
@@ -350,6 +350,24 @@ function VelocityControl() {
           ))}
         </div>
       </fieldset>
+      {/* Outside the fieldset, so it can be set before Live Tuning starts. */}
+      <div className="flex items-center gap-1 font-mono text-xs text-muted-foreground tabular">
+        <span>Max speed ±</span>
+        <EditableBound
+          label="Max speed"
+          value={flywheelMaxRpm}
+          digits={0}
+          step={50}
+          format={(v) => `${Math.round(v)} RPM`}
+          onSubmit={(v) => {
+            const next = Math.round(Math.abs(v))
+            if (next < 50) return "Max speed must be at least 50 RPM."
+            setFlywheelMaxRpm(next)
+            return null
+          }}
+        />
+        <span className="font-sans">Setpoints are clamped to this.</span>
+      </div>
       <SetpointAlternator
         id="vel-alt"
         active={active}
