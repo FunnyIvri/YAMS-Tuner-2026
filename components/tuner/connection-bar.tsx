@@ -14,7 +14,7 @@ import type { LiveTarget } from "@/lib/nt/live-nt"
 
 type TargetKind = LiveTarget["kind"]
 
-const MODE_LABEL = { unknown: "—", autonomous: "Auto", teleoperated: "Teleop", utility: "Test" } as const
+const MODE_LABEL = { unknown: "-", autonomous: "Auto", teleoperated: "Teleop", utility: "Test" } as const
 
 export function ConnectionBar() {
   const { status, host, team, setTeam, connect, disconnect } = useTuner()

@@ -54,7 +54,7 @@ export const PRE_MOTION_CHECKLIST: Record<"positional" | "continuous" | "flywhee
     "Everyone is clear of the mechanism's full path of travel, including pinch points.",
     "Nothing (tools, game pieces, wiring, bumpers) is inside the range of motion.",
     "Someone is at the Driver Station with a hand over Enter (disable) and Space (E-stop).",
-    "The mechanism can be stopped by disabling — no stored energy (springs, surgical tubing, pressurized pneumatics) will move it unsafely.",
+    "The mechanism can be stopped by disabling: no stored energy (springs, surgical tubing, pressurized pneumatics) will move it unsafely.",
   ],
   continuous: [
     "The pivot can rotate a full turn in both directions without wrapping or pinching wiring.",

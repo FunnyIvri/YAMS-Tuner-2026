@@ -14,7 +14,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || ''
 const themeScript = `try{if(localStorage.getItem("theme")==="light")document.documentElement.classList.remove("dark")}catch(e){}`
 
 export const metadata: Metadata = {
-  title: 'YAMS Live Tuner — safe live tuning for FRC mechanisms',
+  title: 'YAMS Live Tuner: safe live tuning for FRC mechanisms',
   description:
     'Live tune YAMS elevators, arms, pivots and flywheels over NetworkTables 4, starting with a guided range-of-motion verification.',
   generator: 'v0.app',

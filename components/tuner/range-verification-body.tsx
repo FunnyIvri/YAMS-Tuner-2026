@@ -253,7 +253,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             pos,
             target !== undefined
               ? `Stopped short of the defined end (${fmt(target)}) with no movement`
-              : `No movement at ${formatVolts(volts)} — likely a hard stop`,
+              : `No movement at ${formatVolts(volts)}, likely a hard stop`,
           )
         }
       }

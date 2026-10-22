@@ -225,11 +225,11 @@ export function velocityUnit(axis: Axis) {
 }
 
 export function formatPosition(value: number | undefined, axis: Axis) {
-  if (value === undefined) return "—"
+  if (value === undefined) return "-"
   return axis === "linear" ? `${value.toFixed(3)} m` : `${value.toFixed(1)}°`
 }
 
 export function formatNumber(value: number | undefined, digits = 2) {
-  if (value === undefined) return "—"
+  if (value === undefined) return "-"
   return value.toFixed(digits)
 }

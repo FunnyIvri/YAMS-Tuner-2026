@@ -21,7 +21,7 @@ export function TelemetryPanel() {
       locked={status !== "connected" || !mechanismName ? "Live position, setpoint and current appear here." : null}
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 short:grid-cols-4 short:gap-1.5">
-        <Readout label="Position" value={kind === "flywheel" ? "—" : formatPosition(position, axis)} />
+        <Readout label="Position" value={kind === "flywheel" ? "-" : formatPosition(position, axis)} />
         <Readout label={`Velocity (${velocityUnit(axis)})`} value={formatNumber(velocity, axis === "linear" ? 3 : 0)} />
         <Readout
           label="Stator (A)"
@@ -32,7 +32,7 @@ export function TelemetryPanel() {
       </div>
       <Chart />
       <p className="font-mono text-xs text-muted-foreground short:hidden">
-        {`Motor temp ${typeof temp === "number" ? `${temp.toFixed(0)} °C` : "—"}`}
+        {`Motor temp ${typeof temp === "number" ? `${temp.toFixed(0)} °C` : "-"}`}
       </p>
     </Panel>
   )

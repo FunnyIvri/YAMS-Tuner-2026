@@ -311,11 +311,11 @@ function VelocityControl() {
       <div className="grid grid-cols-2 gap-2 font-mono tabular">
         <div className="rounded-md border border-border bg-background px-3 py-2">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Measured</p>
-          <p className="text-2xl font-medium">{velocity === undefined ? "—" : `${velocity.toFixed(0)}`}</p>
+          <p className="text-2xl font-medium">{velocity === undefined ? "-" : `${velocity.toFixed(0)}`}</p>
         </div>
         <div className="rounded-md border border-border bg-background px-3 py-2">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Setpoint</p>
-          <p className="text-2xl font-medium">{shownSetpoint === undefined ? "—" : `${shownSetpoint.toFixed(0)}`}</p>
+          <p className="text-2xl font-medium">{shownSetpoint === undefined ? "-" : `${shownSetpoint.toFixed(0)}`}</p>
         </div>
       </div>
       <SessionButton />
