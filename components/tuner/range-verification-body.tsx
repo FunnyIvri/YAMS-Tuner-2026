@@ -35,6 +35,10 @@ const LOOP_MS = 20
 const RUNAWAY_TOLERANCE = { linear: 0.1, rotary: 30 }
 /** Holding with the closed loop: still this far off after HOLD_SETTLE_MS means the gains are not holding it. */
 const HOLD_SETTLE_MS = 1000
+/** The gravity hold voltage stays within this, in volts: it only has to balance the mechanism's weight. */
+const MAX_GRAVITY_VOLTS = 3
+/** One press of − or + on the gravity hold voltage. */
+const GRAVITY_STEP_VOLTS = 0.02
 
 const sideOf = (dir: Dir): Side => (dir > 0 ? "upper" : "lower")
 const formatVolts = (v: number) => `${v.toFixed(2)} V`
@@ -58,6 +62,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     verifyHold,
     setVerifyHold,
   } = useTuner()
+  // Gravity pulls an elevator or an arm down when nothing drives it; a pivot or a turret it does not.
+  const gravityLoaded = kind === "elevator" || kind === "arm"
   const { position, lower: softLower, upper: softUpper } = useAxisValues()
   const params = jogParams(axis)
   const unit = positionUnit(axis)
@@ -79,6 +85,23 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const [rampDownText, setRampDownText] = useState(String(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND))
   /** The voltage is ramping down to 0 after a release. */
   const [rampingDown, setRampingDown] = useState(false)
+  /**
+   * Holding with voltage: the voltage that balances the mechanism's weight, sent between drives instead of 0 V. For an
+   * arm it is the voltage that holds it level, scaled by the cosine of its angle, like kG.
+   */
+  const [gravityVolts, setGravityVolts] = useState(0)
+  const [gravityText, setGravityText] = useState("0")
+  const setGravity = (v: number) => {
+    const next = Math.max(-MAX_GRAVITY_VOLTS, Math.min(MAX_GRAVITY_VOLTS, Math.round(v * 1000) / 1000))
+    setGravityVolts(next)
+    setGravityText(String(next))
+  }
+  // The gravity hold voltage is kG. It starts at 0 V rather than the robot's kG, which may be untuned: an untuned kG
+  // would push the mechanism every time a drive button is released. Use robot kG applies it on purpose.
+  const kGTopic = topics ? `${topics.tuningPrefix}closedloop/feedforward/kG` : null
+  const kSTopic = topics ? `${topics.tuningPrefix}closedloop/feedforward/kS` : null
+  const robotKG = useNtValue<number>(kGTopic)
+  const robotKS = useNtValue<number>(kSTopic)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<{ tone: "warn" | "info"; text: string } | null>(null)
   const [driving, setDriving] = useState<Dir | null>(null)
@@ -95,6 +118,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   verifiedRef.current = verified
   const verifyHoldRef = useRef(verifyHold)
   verifyHoldRef.current = verifyHold
+  const gravityRef = useRef(0)
+  gravityRef.current = verifyHold === "zeroVolts" && gravityLoaded ? gravityVolts : 0
+  const kindRef = useRef(kind)
+  kindRef.current = kind
   /** Holding with the closed loop: where it should hold, and since when. */
   const holdAt = useRef<{ position: number; since: number } | null>(null)
 
@@ -131,6 +158,18 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     [axis, markValue],
   )
 
+  /**
+   * The voltage that holds the mechanism against gravity at a position, when holding with voltage: the gravity hold
+   * voltage for an elevator, scaled by the cosine of the angle for an arm (0 degrees is level). 0 otherwise.
+   */
+  const holdVoltsAt = useCallback((pos: number | undefined) => {
+    const g = gravityRef.current
+    if (g === 0 || pos === undefined) return 0
+    const v = kindRef.current === "arm" ? g * Math.cos((pos * Math.PI) / 180) : g
+    // To the millivolt: an arm hanging near straight down needs only a little.
+    return Math.round(v * 1000) / 1000
+  }, [])
+
   /** Cuts the voltage. With hold, the closed loop takes over at the current position. */
   const endDrive = useCallback(
     (hold = true) => {
@@ -147,8 +186,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       if (!mechanismName) return
       const t = yamsTopics(mechanismName)
       if (hold && sessionRef.current === "verify" && verifyHoldRef.current === "zeroVolts") {
-        // Holding at 0 V: stay in voltage mode, so the closed loop, which may be untuned, never takes over.
-        if (nt.isAnnounced(t.tuning.voltageSetpoint)) nt.set(t.tuning.voltageSetpoint, 0)
+        // Holding with voltage: stay in voltage mode, so the closed loop, which may be untuned, never takes over, at
+        // the gravity hold voltage (0 V unless one is set).
+        const v = holdVoltsAt(axisReader(nt, mechanismName, axis).position())
+        if (nt.isAnnounced(t.tuning.voltageSetpoint)) nt.set(t.tuning.voltageSetpoint, v)
         if (nt.isAnnounced(t.tuning.voltageEnabled)) nt.set(t.tuning.voltageEnabled, true)
         return
       }
@@ -163,7 +204,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       if (nt.isAnnounced(t.tuning.voltageSetpoint)) nt.set(t.tuning.voltageSetpoint, 0)
       if (nt.isAnnounced(t.tuning.voltageEnabled)) nt.set(t.tuning.voltageEnabled, false)
     },
-    [nt, mechanismName, axis],
+    [nt, mechanismName, axis, holdVoltsAt],
   )
 
   // An over-current fault that ends the session mid-drive means the mechanism hit something: that is the end of travel.
@@ -181,6 +222,27 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     if (!verifying && timer.current !== null) endDrive(false)
   }, [verifying, endDrive])
   useEffect(() => () => endDrive(false), [endDrive])
+
+  // Holding with voltage and a gravity hold voltage: keep sending it between drives, since an arm's changes with its
+  // angle and the voltage can be adjusted while verifying.
+  useEffect(() => {
+    if (!verifying || verifyHold !== "zeroVolts" || !gravityLoaded || !mechanismName) return
+    const reader = axisReader(nt, mechanismName, axis)
+    const t = yamsTopics(mechanismName)
+    let last: number | null = null
+    const id = window.setInterval(() => {
+      if (timer.current !== null || sessionRef.current !== "verify") {
+        last = null
+        return
+      }
+      const v = holdVoltsAt(reader.position())
+      if (v === last) return
+      last = v
+      nt.set(t.tuning.voltageSetpoint, v)
+      nt.set(t.tuning.voltageEnabled, true)
+    }, LOOP_MS)
+    return () => clearInterval(id)
+  }, [verifying, verifyHold, gravityLoaded, mechanismName, nt, axis, holdVoltsAt])
 
   // Holding with the closed loop: it holds where verification started, and wherever each drive stops. If it runs away
   // from there, or has not settled close to it after a second, its gains are not holding the mechanism: cut to 0 V
@@ -235,7 +297,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     }
 
     nt.set(t.tuning.setpointPosition, startPos)
-    nt.set(t.tuning.voltageSetpoint, 0)
+    nt.set(t.tuning.voltageSetpoint, holdVoltsAt(startPos))
     nt.set(t.tuning.voltageEnabled, true)
     lastDrive.current = { dir, endedAt: null }
     setDriving(dir)
@@ -303,7 +365,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
 
       const ramp = Math.min(1, (now - startedAt) / RAMP_MS)
       const nearTarget = target !== undefined && Math.abs(target - pos) <= params.reachTolerance * SLOW_ZONE_TOLERANCES
-      const out = Math.round(dir * volts * ramp * (nearTarget ? 0.5 : 1) * 100) / 100
+      // On top of the gravity hold voltage, so driving up and down feel the same and a press never jumps.
+      const out = Math.round((holdVoltsAt(pos) + dir * volts * ramp * (nearTarget ? 0.5 : 1)) * 1000) / 1000
       if (out !== sent) {
         sent = out
         sentVolts.current = out
@@ -338,7 +401,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const releaseDrive = () => {
     if (timer.current === null) return
     const start = sentVolts.current
-    if (release === "cut" || start === 0 || !mechanismName) {
+    if (release === "cut" || !mechanismName) {
+      endDrive()
+      return
+    }
+    const reader = axisReader(nt, mechanismName, axis)
+    if (start === holdVoltsAt(reader.position())) {
       endDrive()
       return
     }
@@ -355,9 +423,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         endDrive(false)
         return
       }
-      out = Math.abs(out) <= step ? 0 : out - Math.sign(out) * step
-      out = Math.round(out * 100) / 100
-      if (out === 0) {
+      // Down to the gravity hold voltage, which is 0 V unless one is set.
+      const goal = holdVoltsAt(reader.position())
+      out = Math.abs(out - goal) <= step ? goal : out - Math.sign(out - goal) * step
+      out = Math.round(out * 1000) / 1000
+      if (out === goal) {
         endDrive()
         return
       }
@@ -581,7 +651,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         <div role="radiogroup" aria-labelledby="hold-label" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
           {(
             [
-              ["zeroVolts", "0 V (safe before tuning)"],
+              ["zeroVolts", "Voltage, no closed loop (safe before tuning)"],
               ["closedLoop", "Closed loop (tuned gains)"],
             ] as const
           ).map(([value, label]) => (
@@ -600,9 +670,83 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {verifyHold === "zeroVolts"
-            ? "The closed loop never runs: between drives the motor gets 0 V, as if disabled, so an arm or elevator can settle under gravity. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
+            ? gravityLoaded
+              ? "The closed loop never runs: between drives the motor gets the gravity hold voltage below, 0 V unless you set one. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
+              : "The closed loop never runs: between drives the motor gets 0 V, as if disabled. Use this until the gains are tuned, since an untuned closed loop can oscillate or run away."
             : "The closed loop holds the mechanism where each drive stops. If it moves away from there or does not settle within a second, verification cuts to 0 V and stops. Only use this once the gains hold the mechanism."}
         </p>
+        {verifyHold === "zeroVolts" && gravityLoaded && (
+          <div className="flex flex-col gap-1.5 rounded-md border border-border p-3">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground" id="gravity-label">
+              Gravity hold voltage
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Lower the gravity hold voltage"
+                disabled={driving !== null || rampingDown}
+                onClick={() => setGravity(gravityVolts - GRAVITY_STEP_VOLTS)}
+              >
+                −
+              </Button>
+              <Input
+                inputMode="decimal"
+                aria-labelledby="gravity-label"
+                className="h-8 w-24 font-mono"
+                value={gravityText}
+                disabled={driving !== null || rampingDown}
+                onChange={(e) => setGravityText(e.target.value)}
+                onBlur={() => {
+                  const v = Number.parseFloat(gravityText)
+                  if (!Number.isFinite(v)) setGravityText(String(gravityVolts))
+                  else if (v !== gravityVolts) setGravity(v)
+                }}
+                onKeyDown={blurOnEnter}
+              />
+              <span className="text-sm text-muted-foreground">V</span>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Raise the gravity hold voltage"
+                disabled={driving !== null || rampingDown}
+                onClick={() => setGravity(gravityVolts + GRAVITY_STEP_VOLTS)}
+              >
+                +
+              </Button>
+              {typeof robotKG === "number" && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={driving !== null || rampingDown || gravityVolts === Math.round(robotKG * 1000) / 1000}
+                    onClick={() => setGravity(robotKG)}
+                  >
+                    {`Use robot kG (${formatVolts(robotKG)})`}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!kGTopic || gravityVolts === Math.round(robotKG * 1000) / 1000}
+                    onClick={() => kGTopic && nt.set(kGTopic, gravityVolts)}
+                  >
+                    Set kG to this
+                  </Button>
+                </>
+              )}
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {kind === "arm"
+                ? "The voltage that holds the arm level, like kG: it is scaled by the cosine of the angle (0° is level), so the arm stays put wherever you let go. Start verification, then raise it a little at a time until the arm stops sagging between drives, and lower it if the arm creeps up. Drives add to it, and a ramped release ramps down to it."
+                : "The voltage that holds the elevator up, like kG. Start verification, then raise it a little at a time until the elevator stops sagging between drives, and lower it if the elevator creeps up. Drives add to it, and a ramped release ramps down to it."}
+              {` It is kG: it starts at 0 V, Use robot kG starts from the robot's, and once it holds, Set kG to this sends it to the robot.`}
+              {typeof robotKS === "number" && robotKS > 0
+                ? ` Static friction (kS, ${formatVolts(robotKS)} here) means anything from kG − kS to kG + kS holds it still, so the hold you find is kG within kS: where it starts creeping down and where it starts creeping up are kG − kS and kG + kS.`
+                : " Static friction (kS) means a band of voltages around kG holds it still: kG is the middle of that band, and kS is half its width."}
+              {` Up to ${MAX_GRAVITY_VOLTS} V. Stopping verification still ends at 0 V.`}
+            </p>
+          </div>
+        )}
       </div>
 
       {!verifying ? (
@@ -613,7 +757,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           </Button>
           <p className="text-sm leading-relaxed text-muted-foreground">
             {verifyHold === "zeroVolts"
-              ? "Applies 0 V to start with. Voltage is only applied while you hold a drive button."
+              ? gravityLoaded && gravityVolts !== 0
+                ? "Applies the gravity hold voltage to start with. More voltage is only applied while you hold a drive button."
+                : "Applies 0 V to start with. Voltage is only applied while you hold a drive button."
               : "Holds the mechanism where it is with the closed loop. Voltage is only applied while you hold a drive button."}
           </p>
           {!rangeVerified && skipControl}
