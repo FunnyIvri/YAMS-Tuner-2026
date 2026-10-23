@@ -40,7 +40,8 @@ export interface VerifiedRange {
   upper: number | null
 }
 
-export type SessionPurpose = "verify" | "voltage" | "tune"
+/** verify: range of motion. voltage: the inversion check. jog: driving with voltage once setup is done. tune: Live Tuning. */
+export type SessionPurpose = "verify" | "voltage" | "jog" | "tune"
 
 export type InversionCheck = "pending" | "passed" | "skipped"
 
@@ -101,6 +102,9 @@ interface TunerApi {
   /** Connected to a simulation on this machine. */
   isSimulation: boolean
 
+  /** Continue was pressed on the mechanism step. */
+  mechanismConfirmed: boolean
+  setMechanismConfirmed: (v: boolean) => void
   checklistConfirmed: boolean
   setChecklistConfirmed: (v: boolean) => void
   stallCurrent: number
@@ -169,6 +173,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const [kind, setKindState] = useState<MechanismKind>("arm")
   const [continuous, setContinuousState] = useState(false)
   const [verified, setVerified] = useState<VerifiedRange>({ lower: null, upper: null })
+  const [mechanismConfirmed, setMechanismConfirmed] = useState(false)
   const [checklistConfirmed, setChecklistConfirmed] = useState(false)
   const [stallCurrent, setStallCurrent] = useState(DEFAULT_STALL_CURRENT)
   const [flywheelRange, setFlywheelRange] = useState<FlywheelRange>(DEFAULT_FLYWHEEL_RANGE)
@@ -196,11 +201,12 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const requiresRangeVerification = positional
   const rangeVerified = !requiresRangeVerification || rangeSkipped || (verified.lower !== null && verified.upper !== null)
   const tuningUnlocked =
-    status === "connected" && !!mechanismName && !!commandName && rangeVerified && checklistConfirmed && inversionCheck !== "pending"
+    status === "connected" && !!mechanismName && !!commandName && mechanismConfirmed && rangeVerified && checklistConfirmed && inversionCheck !== "pending"
 
   // Anything that changes what is being moved invalidates every safety confirmation.
   const resetSafety = useCallback(() => {
     setVerified({ lower: null, upper: null })
+    setMechanismConfirmed(false)
     setChecklistConfirmed(false)
     setCurrentAsWarning(false)
     setRangeSkipped(false)
@@ -237,8 +243,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       setSession(null)
       setLastStop({ reason, at: Date.now(), fault, cause })
       if (!name) return
-      if (((was === "verify" && hold === "zeroVolts") || was === "voltage") && k !== "flywheel") {
-        // Checking inversions, or verifying at 0 V: the closed loop may be untuned, so stay at 0 V until the command
+      if (((was === "verify" && hold === "zeroVolts") || was === "voltage" || was === "jog") && k !== "flywheel") {
+        // Checking inversions, driving with voltage, or verifying at 0 V: the closed loop may be untuned, so stay at 0 V until the command
         // has ended.
         holdAtZeroVolts(nt, name)
         if (cmd) nt.set(liveTuningCommandTopic(cmd), false)
@@ -301,7 +307,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         nt.set(t.tuning.setpointPosition, pos)
         // Checking inversions, or verifying at 0 V: voltage mode is on before the command starts, so the closed loop,
         // which may be untuned, never runs.
-        if (purpose === "voltage" || (purpose === "verify" && live.current.verifyHold === "zeroVolts")) holdAtZeroVolts(nt, name)
+        if (purpose === "voltage" || purpose === "jog" || (purpose === "verify" && live.current.verifyHold === "zeroVolts")) holdAtZeroVolts(nt, name)
       }
       startingRef.current = true
       setStarting(true)
@@ -561,6 +567,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       positional,
       isSimulation,
     requiresRangeVerification,
+    mechanismConfirmed,
+    setMechanismConfirmed,
     checklistConfirmed,
     setChecklistConfirmed,
     stallCurrent,

@@ -69,7 +69,7 @@ export interface GainDef {
   path: string
   /** Rejects negative values when true. */
   nonNegative: boolean
-  group: "feedback" | "feedforward" | "profile" | "limits"
+  group: "feedback" | "feedforward" | "profile" | "current" | "ramp"
   hint?: string
 }
 
@@ -131,9 +131,9 @@ export const GAIN_DEFS: GainDef[] = [
   { key: "maxVelocity", label: "Max velocity", path: "closedloop/motionprofile/maxVelocity", nonNegative: true, group: "profile" },
   { key: "maxAcceleration", label: "Max accel", path: "closedloop/motionprofile/maxAcceleration", nonNegative: true, group: "profile" },
   { key: "maxJerk", label: "Max jerk", path: "closedloop/motionprofile/maxJerk", nonNegative: true, group: "profile" },
-  { key: "statorLimit", label: "Stator limit", path: "current/limit/stator", nonNegative: true, group: "limits", hint: "A" },
-  { key: "supplyLimit", label: "Supply limit", path: "current/limit/supply", nonNegative: true, group: "limits", hint: "A" },
-  { key: "closedRamp", label: "Closed-loop ramp", path: "ramprate/dutycycle/closedloop", nonNegative: true, group: "limits", hint: "s" },
+  { key: "statorLimit", label: "Stator limit", path: "current/limit/stator", nonNegative: true, group: "current", hint: "A" },
+  { key: "supplyLimit", label: "Supply limit", path: "current/limit/supply", nonNegative: true, group: "current", hint: "A" },
+  { key: "closedRamp", label: "Closed-loop ramp", path: "ramprate/dutycycle/closedloop", nonNegative: true, group: "ramp", hint: "s" },
 ]
 
 /** Mechanism telemetry names published under /Tuning/ with a tunable setpoint. */

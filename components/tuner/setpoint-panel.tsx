@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { SetpointAlternator } from "@/components/tuner/setpoint-alternator"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
-import { Notice, Panel } from "@/components/tuner/panel"
+import { CardTabs, Notice, Panel } from "@/components/tuner/panel"
+import { VoltageDrive } from "@/components/tuner/voltage-drive"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
@@ -29,30 +30,23 @@ function useLiveTuneLock(): string | null {
           : null
 }
 
+const TABS = [
+  ["setpoints", "Setpoints"],
+  ["voltage", "Voltage"],
+] as const
+
 export function SetpointPanel() {
   const { kind } = useTuner()
+  const [tab, setTab] = useState<(typeof TABS)[number][0]>("setpoints")
   return (
     <Panel
       step={5}
       title="Live tune"
-      description="Send setpoints while you adjust gains. Press Space at any time to stop."
+      description="Send setpoints while you adjust gains, or drive with voltage. Press Space at any time to stop."
       locked={useLiveTuneLock()}
     >
-      {kind === "flywheel" ? <VelocityControl /> : <PositionControl />}
-    </Panel>
-  )
-}
-
-/** On a tablet on its side, step 5 is only this button until Live Tuning starts. The controls then open on the left. */
-export function LiveTuneStart() {
-  return (
-    <Panel
-      step={5}
-      title="Live tune"
-      description="Start Live Tuning to send setpoints. The controls open on the left. Press Space at any time to stop."
-      locked={useLiveTuneLock()}
-    >
-      <SessionButton />
+      <CardTabs label="Setpoints or voltage" tabs={TABS} value={tab} onChange={setTab} />
+      {tab === "voltage" ? <VoltageDrive /> : kind === "flywheel" ? <VelocityControl /> : <PositionControl />}
     </Panel>
   )
 }
@@ -73,6 +67,7 @@ function SessionButton() {
       </Button>
       {session === "verify" && <p className="text-sm text-muted-foreground">Finish range verification first.</p>}
       {session === "voltage" && <p className="text-sm text-muted-foreground">Finish the inversion check first.</p>}
+      {session === "jog" && <p className="text-sm text-muted-foreground">Stop driving with voltage first.</p>}
       {error && <Notice tone="danger">{error}</Notice>}
     </div>
   )

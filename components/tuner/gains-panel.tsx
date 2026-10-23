@@ -1,57 +1,148 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { Input } from "@/components/ui/input"
 import { useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
-import { Panel } from "@/components/tuner/panel"
-import { GAIN_DEFS, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
+import { CardTabs, Panel } from "@/components/tuner/panel"
+import { CurrentTripField } from "@/components/tuner/safety-checklist"
+import { GAIN_DEFS, axisReader, positionUnit, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 
-const GROUPS: { key: GainDef["group"]; label: string }[] = [
+const GAIN_GROUPS: { key: GainDef["group"]; label: string }[] = [
   { key: "feedback", label: "Feedback" },
   { key: "feedforward", label: "Feedforward" },
   { key: "profile", label: "Motion profile" },
-  { key: "limits", label: "Limits" },
 ]
 
+const TABS = [
+  ["gains", "Gains"],
+  ["limits", "Limits"],
+] as const
+
 export function GainsPanel() {
-  const { nt, mechanismName, status, kind, axis } = useTuner()
+  const { nt, mechanismName, status, kind, axis, positional } = useTuner()
   useNtVersion()
+  const [tab, setTab] = useState<(typeof TABS)[number][0]>("gains")
   const prefix = mechanismName ? yamsTopics(mechanismName).tuningPrefix : ""
   const available = mechanismName ? GAIN_DEFS.filter((g) => nt.isAnnounced(prefix + g.path)) : []
+  const reader = mechanismName ? axisReader(nt, mechanismName, axis) : null
+  const softLimits =
+    positional && reader && nt.isAnnounced(reader.lowerLimitTopic) && nt.isAnnounced(reader.upperLimitTopic) ? reader : null
+
+  const group = (key: GainDef["group"], label: string) => {
+    const defs = available.filter((g) => g.group === key)
+    if (defs.length === 0) return null
+    const units = defs.map((g) => (g.group === "profile" ? profileUnit(g.key, kind, axis) : null))
+    const converted = units.find((u) => u && u.label !== u.wireLabel)
+    return (
+      <GainGroup key={key} label={label}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {defs.map((g, i) => (
+            <GainInput key={`${g.key}|${kind}|${axis}`} def={g} topic={prefix + g.path} unit={units[i]} />
+          ))}
+        </div>
+        {converted && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {"Entered in degrees for this mechanism type, then converted to the RPM-based units YAMS reads."}
+          </p>
+        )}
+      </GainGroup>
+    )
+  }
+  const gains = GAIN_GROUPS.map((g) => group(g.key, g.label)).filter(Boolean)
 
   return (
     <Panel
       title="Gains"
       description="Values the robot publishes under /Tuning. Applied when you press Enter or click away; Esc cancels."
-      locked={status !== "connected" || !mechanismName ? "Choose a mechanism to edit its gains." : available.length === 0 ? "This mechanism publishes no tunable gains." : null}
+      locked={status !== "connected" || !mechanismName ? "Choose a mechanism to edit its gains." : null}
     >
-      {GROUPS.map((group) => {
-        const defs = available.filter((g) => g.group === group.key)
-        if (defs.length === 0) return null
-        const units = defs.map((g) => (g.group === "profile" ? profileUnit(g.key, kind, axis) : null))
-        const converted = units.find((u) => u && u.label !== u.wireLabel)
-        return (
-          <div key={group.key} className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group.label}</h3>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {defs.map((g, i) => (
-                <GainInput key={`${g.key}|${kind}|${axis}`} def={g} topic={prefix + g.path} unit={units[i]} />
-              ))}
-            </div>
-            {converted && (
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {"Entered in degrees for this mechanism type, then converted to the RPM-based units YAMS reads."}
-              </p>
-            )}
-          </div>
+      <CardTabs label="Gains or limits" tabs={TABS} value={tab} onChange={setTab} />
+      {tab === "gains" ? (
+        gains.length > 0 ? (
+          gains
+        ) : (
+          <p className="text-sm text-muted-foreground">This mechanism publishes no tunable gains.</p>
         )
-      })}
+      ) : (
+        <>
+          {group("current", "Current limits")}
+          <GainGroup label="Stator fault">
+            <div className="sm:w-1/2">
+              <CurrentTripField />
+            </div>
+          </GainGroup>
+          {softLimits && <SoftLimits lowerTopic={softLimits.lowerLimitTopic} upperTopic={softLimits.upperLimitTopic} />}
+          {group("ramp", "Ramp rate")}
+        </>
+      )}
     </Panel>
   )
 }
 
-function GainInput({ def, topic, unit }: { def: GainDef; topic: string; unit: GainUnit | null }) {
+function GainGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * The robot's soft limits, in degrees or meters like the setpoints. They don't change the verified range: Live Tuning
+ * still stops if the mechanism leaves it.
+ */
+function SoftLimits({ lowerTopic, upperTopic }: { lowerTopic: string; upperTopic: string }) {
+  const { nt, axis, verified } = useTuner()
+  const unit = positionUnit(axis)
+  const limit = (key: string, label: string): GainDef => ({ key, label, path: "", nonNegative: false, group: "current", hint: unit })
+  const verifiedRange = verified.lower !== null && verified.upper !== null
+  return (
+    <GainGroup label="Soft limits">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <GainInput
+          key={`softLower|${axis}`}
+          def={limit("softLower", "Lower")}
+          topic={lowerTopic}
+          unit={null}
+          valid={(v) => {
+            const upper = nt.getNumber(upperTopic)
+            return upper === undefined || v < upper
+          }}
+        />
+        <GainInput
+          key={`softUpper|${axis}`}
+          def={limit("softUpper", "Upper")}
+          topic={upperTopic}
+          unit={null}
+          valid={(v) => {
+            const lower = nt.getNumber(lowerTopic)
+            return lower === undefined || v > lower
+          }}
+        />
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {verifiedRange
+          ? "The robot won't drive past these. Live Tuning still stops if the mechanism leaves the verified range."
+          : "The robot won't drive past these. The lower limit must be below the upper one."}
+      </p>
+    </GainGroup>
+  )
+}
+
+function GainInput({
+  def,
+  topic,
+  unit,
+  valid,
+}: {
+  def: GainDef
+  topic: string
+  unit: GainUnit | null
+  /** Extra check on the entered value, in display units. */
+  valid?: (v: number) => boolean
+}) {
   const { nt } = useTuner()
   const value = useNtValue<number>(topic)
   const [draft, setDraft] = useState<string | null>(null)
@@ -73,7 +164,7 @@ function GainInput({ def, topic, unit }: { def: GainDef; topic: string; unit: Ga
   const apply = (): boolean => {
     if (draft === null) return true
     const v = Number(draft)
-    if (draft.trim() === "" || !Number.isFinite(v) || (def.nonNegative && v < 0)) {
+    if (draft.trim() === "" || !Number.isFinite(v) || (def.nonNegative && v < 0) || (valid && !valid(v))) {
       setInvalid(true)
       return false
     }

@@ -30,7 +30,7 @@ export function StopBar() {
             {active ? (
               <p className="truncate">
                 <span className="font-mono font-semibold uppercase tracking-wide">
-                  {starting ? "Starting" : session === "verify" ? "Verifying range" : "Live tuning"}
+                  {starting ? "Starting" : session === "verify" ? "Verifying range" : session === "jog" ? "Driving with voltage" : "Live tuning"}
                 </span>
                 <span className="opacity-80">{` · ${mechanismName ?? ""} · Press `}</span>
                 <Kbd>Space</Kbd>

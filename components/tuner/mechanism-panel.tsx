@@ -1,11 +1,12 @@
 "use client"
 
 import { useMemo } from "react"
+import { Button } from "@/components/ui/button"
 import { useNtVersion, useTuner } from "@/components/tuner/tuner-context"
 import { Field, NativeSelect, Panel } from "@/components/tuner/panel"
 import { KIND_LABELS, discoverCommands, discoverMechanisms, guessKind, type MechanismKind } from "@/lib/yams/topics"
 
-export function MechanismPanel() {
+export function MechanismPanel({ onContinue }: { onContinue: () => void }) {
   const {
     nt,
     status,
@@ -20,6 +21,7 @@ export function MechanismPanel() {
     continuous,
     setContinuous,
     axis,
+    setMechanismConfirmed,
   } = useTuner()
   const version = useNtVersion()
   const busy = session !== null || starting
@@ -106,6 +108,16 @@ export function MechanismPanel() {
           </Field>
         )}
       </div>
+      <Button
+        className="self-start"
+        disabled={!mechanismName || !commandName}
+        onClick={() => {
+          setMechanismConfirmed(true)
+          onContinue()
+        }}
+      >
+        Continue
+      </Button>
     </Panel>
   )
 }

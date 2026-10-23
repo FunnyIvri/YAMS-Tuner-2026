@@ -124,3 +124,33 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "danger" |
     </p>
   )
 }
+
+/** Tabs inside a card: one row of buttons, the chosen one filled in. */
+export function CardTabs<T extends string>({
+  label,
+  tabs,
+  value,
+  onChange,
+}: {
+  label: string
+  tabs: readonly (readonly [T, string])[]
+  value: T
+  onChange: (value: T) => void
+}) {
+  return (
+    <div role="tablist" aria-label={label} className="grid auto-cols-fr grid-flow-col gap-1 rounded-md border border-border p-1">
+      {tabs.map(([key, text]) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={value === key}
+          onClick={() => onChange(key)}
+          className="min-h-9 rounded px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground aria-selected:bg-secondary aria-selected:text-foreground"
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
