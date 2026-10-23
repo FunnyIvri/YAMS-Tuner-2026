@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { SkipForward } from "lucide-react"
+import { SkipForward, TriangleAlert, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -92,9 +92,20 @@ function SkipRangeDialog() {
         <SkipForward data-icon="inline-start" />
         Skip verification
       </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Skip range-of-motion verification?</AlertDialogTitle>
+      <AlertDialogContent className="border-l-[3px] border-l-destructive">
+        <AlertDialogCancel
+          variant="ghost"
+          size="icon"
+          aria-label="Close"
+          className="absolute top-2 right-2 z-10"
+        >
+          <X />
+        </AlertDialogCancel>
+        <AlertDialogHeader className="pr-8">
+          <AlertDialogTitle className="flex items-center gap-2">
+            <TriangleAlert className="size-5 shrink-0 text-destructive" aria-hidden />
+            Skip range-of-motion verification?
+          </AlertDialogTitle>
           <AlertDialogDescription render={<div />} className="flex flex-col gap-2 text-left">
             <p>Without a verified range, this tool cannot keep setpoints inside the mechanism&apos;s real travel. If you continue:</p>
             <ul className="flex list-disc flex-col gap-1 pl-5">
