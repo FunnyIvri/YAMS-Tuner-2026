@@ -76,7 +76,7 @@ export function GainsPanel() {
       <p
         className={cn(
           "rounded-sm border-l-2 px-2 py-1 text-xs leading-relaxed",
-          ROBOT_TABS.includes(tab) ? "border-primary text-foreground" : "border-sapphire text-muted-foreground",
+          ROBOT_TABS.includes(tab) ? "border-primary text-foreground" : "border-primary text-muted-foreground",
         )}
       >
         {ROBOT_TABS.includes(tab)
