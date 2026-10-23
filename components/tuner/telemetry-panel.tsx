@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
 import { Panel, Readout } from "@/components/tuner/panel"
 import { axisReader, formatNumber, formatPosition, velocityUnit, yamsTopics } from "@/lib/yams/topics"
@@ -31,10 +31,47 @@ export function TelemetryPanel() {
         <Readout label="Output (V)" value={formatNumber(typeof volts === "number" ? volts : undefined, 2)} />
       </div>
       <Chart />
-      <p className="font-mono text-xs text-muted-foreground short:hidden">
-        {`Motor temp ${typeof temp === "number" ? `${temp.toFixed(0)} °C` : "-"}`}
-      </p>
+      <MotorTemp celsius={temp} />
     </Panel>
+  )
+}
+
+const FAHRENHEIT_KEY = "yams-tuner.fahrenheit"
+
+/** The motor temperature, which YAMS publishes in °C. Clicking it switches to °F and back, remembered in this browser. */
+function MotorTemp({ celsius }: { celsius: number | undefined }) {
+  const [fahrenheit, setFahrenheit] = useState(false)
+  useEffect(() => {
+    try {
+      setFahrenheit(window.localStorage.getItem(FAHRENHEIT_KEY) === "true")
+    } catch {
+      // Storage can be unavailable; °C then.
+    }
+  }, [])
+  const toggle = () => {
+    const next = !fahrenheit
+    setFahrenheit(next)
+    try {
+      window.localStorage.setItem(FAHRENHEIT_KEY, String(next))
+    } catch {
+      // Not remembered, but still switched.
+    }
+  }
+  const value =
+    typeof celsius !== "number" ? "-" : fahrenheit ? `${((celsius * 9) / 5 + 32).toFixed(0)} °F` : `${celsius.toFixed(0)} °C`
+  return (
+    <p className="font-mono text-xs text-muted-foreground short:hidden">
+      {"Motor temp "}
+      <button
+        type="button"
+        onClick={toggle}
+        title={fahrenheit ? "Show in Celsius" : "Show in Fahrenheit"}
+        aria-label={`Motor temp ${value}. Switch to ${fahrenheit ? "Celsius" : "Fahrenheit"}`}
+        className="rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {value}
+      </button>
+    </p>
   )
 }
 
