@@ -95,9 +95,9 @@ interface TunerApi {
 
   verified: VerifiedRange
   setVerifiedBound: (side: "lower" | "upper", value: number | null) => void
-  /** The range the range step found, before any change from the Limits tab. */
+  /** The range the range step found, before any change from the Settings card's Tuner tab. */
   foundRange: VerifiedRange
-  /** Changes the allowed range from the Limits tab, keeping what the range step found. */
+  /** Changes the allowed range from the Settings card's Tuner tab, keeping what the range step found. */
   overrideVerifiedBound: (side: "lower" | "upper", value: number) => void
   rangeVerified: boolean
   requiresRangeVerification: boolean

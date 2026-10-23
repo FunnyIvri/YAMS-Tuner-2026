@@ -88,9 +88,8 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const [maxDriveVolts, setMaxDriveVolts] = useState(DEFAULT_MAX_DRIVE_VOLTS)
   const [minDriveVolts, setMinDriveVolts] = useState(MIN_DRIVE_VOLTS)
   const [appliedVolts, setAppliedVolts] = useState(0)
-  // An arm swings under gravity when the voltage is cut, so it ramps down by default.
-  const [release, setRelease] = useState<Release>(kind === "arm" ? "ramp" : "cut")
-  useEffect(() => setRelease(kind === "arm" ? "ramp" : "cut"), [kind])
+  // Cut to 0 V by default for every mechanism. Ramping is a choice.
+  const [release, setRelease] = useState<Release>("cut")
   const [rampDownRate, setRampDownRate] = useState(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND)
   const [rampDownText, setRampDownText] = useState(String(DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND))
   /** The voltage is ramping down to 0 after a release. */

@@ -9,6 +9,7 @@ import { VoltageInversionCheck } from "@/components/tuner/voltage-inversion-chec
 import { RangeVerification } from "@/components/tuner/range-verification"
 import { SetpointPanel } from "@/components/tuner/setpoint-panel"
 import { GainsPanel } from "@/components/tuner/gains-panel"
+import { LiveTuneProvider } from "@/components/tuner/voltage-drive"
 import { TelemetryPanel } from "@/components/tuner/telemetry-panel"
 import { cn } from "@/lib/utils"
 
@@ -35,14 +36,14 @@ function useStage(): Stage {
 
 /**
  * One step at a time on the left, at most two cards, with the telemetry always on the right. Live tuning is the Live
- * tune card and the Gains card. On a phone held upright everything stacks; on a phone turned sideways (short:) the
+ * tune card and the Settings card. On a phone held upright everything stacks; on a phone turned sideways (short:) the
  * telemetry is pinned on the left instead.
  *
  * Only the telemetry is pinned. The cards scroll with the page, so when a field near the bottom (such as the current
  * limits) opens the on-screen keyboard, the page can scroll it into view.
  */
 export function TunerLayout() {
-  const { session, starting } = useTuner()
+  const { session, starting, mechanismName, kind } = useTuner()
   const stage = useStage()
   // A finished step opened again from the progress bar. Only earlier steps can be opened.
   const [viewing, setViewing] = useState<Stage | null>(null)
@@ -67,10 +68,10 @@ export function TunerLayout() {
     ) : shown === "range" ? (
       <RangeVerification />
     ) : (
-      <>
+      <LiveTuneProvider key={`${mechanismName}|${kind}`}>
         <SetpointPanel />
         <GainsPanel />
-      </>
+      </LiveTuneProvider>
     )
 
   return (

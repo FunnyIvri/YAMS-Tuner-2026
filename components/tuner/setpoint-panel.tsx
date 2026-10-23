@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider"
 import { SetpointAlternator } from "@/components/tuner/setpoint-alternator"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
 import { CardTabs, Notice, Panel } from "@/components/tuner/panel"
-import { VoltageDrive } from "@/components/tuner/voltage-drive"
+import { VoltageDrive, useLiveTune, type LiveTab } from "@/components/tuner/voltage-drive"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
@@ -33,11 +33,11 @@ function useLiveTuneLock(): string | null {
 const TABS = [
   ["setpoints", "Setpoints"],
   ["voltage", "Voltage"],
-] as const
+] as const satisfies readonly (readonly [LiveTab, string])[]
 
 export function SetpointPanel() {
   const { kind } = useTuner()
-  const [tab, setTab] = useState<(typeof TABS)[number][0]>("setpoints")
+  const { tab, setTab } = useLiveTune()
   return (
     <Panel
       step={5}

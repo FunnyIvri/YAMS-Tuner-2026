@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { useAxisValues, useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
 import { CardTabs, Panel } from "@/components/tuner/panel"
 import { CurrentTripField } from "@/components/tuner/safety-checklist"
+import { VoltageSettingsPanel, useLiveTune } from "@/components/tuner/voltage-drive"
 import { GAIN_DEFS, axisReader, formatPosition, positionUnit, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 
@@ -14,15 +15,29 @@ const GAIN_GROUPS: { key: GainDef["group"]; label: string }[] = [
   { key: "profile", label: "Motion profile" },
 ]
 
-const TABS = [
-  ["gains", "Gains"],
-  ["limits", "Limits"],
-] as const
+type Tab = "gains" | "limits" | "tuner" | "voltage"
+/** Tabs whose values live on the robot. The others only change this tuner. */
+const ROBOT_TABS: Tab[] = ["gains", "limits"]
 
 export function GainsPanel() {
   const { nt, mechanismName, status, kind, axis, positional, requiresRangeVerification } = useTuner()
   useNtVersion()
-  const [tab, setTab] = useState<(typeof TABS)[number][0]>("gains")
+  const live = useLiveTune()
+  // While the Live tune card drives with voltage, a Voltage tab holds the drive's settings, and opens when it appears.
+  const voltageTab = live.tab === "voltage"
+  const [chosen, setTab] = useState<Tab>("gains")
+  const [lastVoltageTab, setLastVoltageTab] = useState(voltageTab)
+  if (voltageTab !== lastVoltageTab) {
+    setLastVoltageTab(voltageTab)
+    if (voltageTab) setTab("voltage")
+  }
+  const tab: Tab = chosen === "voltage" && !voltageTab ? "gains" : chosen
+  const tabs: [Tab, string][] = [
+    ["gains", "Gains"],
+    ["limits", "Limits"],
+    ["tuner", "Tuner"],
+    ...(voltageTab ? ([["voltage", "Voltage"]] as [Tab, string][]) : []),
+  ]
   const prefix = mechanismName ? yamsTopics(mechanismName).tuningPrefix : ""
   const available = mechanismName ? GAIN_DEFS.filter((g) => nt.isAnnounced(prefix + g.path)) : []
   const reader = mechanismName ? axisReader(nt, mechanismName, axis) : null
@@ -53,26 +68,43 @@ export function GainsPanel() {
 
   return (
     <Panel
-      title="Gains"
-      description="Values the robot publishes under /Tuning. Applied when you press Enter or click away; Esc cancels."
+      title="Settings"
+      description="Gains and Limits are the robot's own values. Tuner and Voltage only change this tuner. Changes apply when you press Enter or click away; Esc cancels."
       locked={status !== "connected" || !mechanismName ? "Choose a mechanism to edit its gains." : null}
     >
-      <CardTabs label="Gains or limits" tabs={TABS} value={tab} onChange={setTab} />
-      {tab === "gains" ? (
+      <CardTabs label="Robot or tuner settings" tabs={tabs} value={tab} onChange={setTab} />
+      <p
+        className={cn(
+          "rounded-sm border-l-2 px-2 py-1 text-xs leading-relaxed",
+          ROBOT_TABS.includes(tab) ? "border-primary text-foreground" : "border-sapphire text-muted-foreground",
+        )}
+      >
+        {ROBOT_TABS.includes(tab)
+          ? "On the robot: sent to it under /Tuning."
+          : tab === "voltage"
+            ? "Only in this tuner: nothing on this tab is sent to the robot, except Set kG to this."
+            : "Only in this tuner: nothing on this tab is sent to the robot."}
+      </p>
+      {tab === "voltage" ? (
+        <VoltageSettingsPanel />
+      ) : tab === "gains" ? (
         gains.length > 0 ? (
           gains
         ) : (
           <p className="text-sm text-muted-foreground">This mechanism publishes no tunable gains.</p>
         )
-      ) : (
+      ) : tab === "tuner" ? (
         <>
-          {group("current", "Current limits")}
           <GainGroup label="Stator fault">
             <div className="sm:w-1/2">
               <CurrentTripField />
             </div>
           </GainGroup>
           {positional && requiresRangeVerification && <RangeOfMotion />}
+        </>
+      ) : (
+        <>
+          {group("current", "Current limits")}
           {softLimits && <SoftLimits lowerTopic={softLimits.lowerLimitTopic} upperTopic={softLimits.upperLimitTopic} />}
           {group("ramp", "Ramp rate")}
         </>
