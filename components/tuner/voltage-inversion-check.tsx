@@ -19,12 +19,14 @@ const DEFAULT_MAX_VOLTS = 1
 const HARD_LIMIT_VOLTS = 12
 /** Below this, friction alone can keep the mechanism still, so no direction is judged. */
 const MIN_TEST_VOLTS = 0.25
+/** How much a flywheel's speed has to change, in RPM, before its direction counts. */
+const FLYWHEEL_DIRECTION_RPM = 30
 const SEND_INTERVAL_MS = 100
 
 type Trial = "with" | "against" | null
 
 export function VoltageInversionCheck() {
-  const { mechanismName, commandName, checklistConfirmed, inversionCheck, setInversionCheck, session } = useTuner()
+  const { mechanismName, commandName, checklistConfirmed, inversionCheck, setInversionCheck, session, kind } = useTuner()
   const locked =
     !mechanismName || !commandName
       ? "Choose a mechanism first."
@@ -54,7 +56,11 @@ export function VoltageInversionCheck() {
     <Panel
       step={3}
       title="Check inversions"
-      description="Confirm position goes up when the mechanism moves in its positive direction. Drive it with a small voltage while enabled. Only needed once during setup."
+      description={
+        kind === "flywheel"
+          ? "Confirm the flywheel speeds up forward with positive voltage. Drive it with a small voltage while enabled. Only needed once during setup."
+          : "Confirm position goes up when the mechanism moves in its positive direction. Drive it with a small voltage while enabled. Only needed once during setup."
+      }
       locked={locked}
     >
       <CheckBody key={mechanismName ?? ""} />
@@ -64,7 +70,8 @@ export function VoltageInversionCheck() {
 
 function CheckBody() {
   const { nt, mechanismName, axis, kind, session, starting, startLiveTuning, stop, setInversionCheck } = useTuner()
-  const { position } = useAxisValues()
+  const { position, velocity } = useAxisValues()
+  const flywheel = kind === "flywheel"
   const topics = mechanismName ? yamsTopics(mechanismName) : null
   // Subscribing re-renders when the topic is announced by a YAMS version that supports it.
   useNtValue<boolean>(topics?.tuning.voltageEnabled ?? null)
@@ -101,18 +108,21 @@ function CheckBody() {
     }
   }, [active])
 
-  // Compares the direction the mechanism moves with the sign of the commanded voltage.
+  // Compares the direction the mechanism moves with the sign of the commanded voltage. A flywheel is judged by
+  // the change in its speed rather than its position: after positive voltage it keeps coasting forward, so its
+  // position still rises under negative voltage, while its speed falls as it should.
   useEffect(() => {
     if (!active || !mechanismName) return
     const reader = axisReader(nt, mechanismName, axis)
-    const threshold = jogParams(axis).directionThreshold
+    const measure = () => (flywheel ? reader.velocity() : reader.position())
+    const threshold = flywheel ? FLYWHEEL_DIRECTION_RPM : jogParams(axis).directionThreshold
     let trialSign = 0
     let trialStart: number | undefined
     let judged = false
     const id = setInterval(() => {
       const v = commanded.current
       const sign = Math.abs(v) >= MIN_TEST_VOLTS ? Math.sign(v) : 0
-      const pos = reader.position()
+      const pos = measure()
       if (sign !== trialSign) {
         trialSign = sign
         trialStart = pos
@@ -131,12 +141,14 @@ function CheckBody() {
         nt.set(yamsTopics(mechanismName).tuning.voltageSetpoint, 0)
         setVolts(0)
         setWarning(
-          `Position went ${sign > 0 ? "down with positive" : "up with negative"} voltage, so the voltage was set back to 0 V. The motor or encoder inversion is probably wrong. If gravity is pulling the mechanism, it can also be stronger than this voltage; try a little more voltage before changing inversions.`,
+          flywheel
+            ? `Speed went ${sign > 0 ? "down with positive" : "up with negative"} voltage, so the voltage was set back to 0 V. The motor or encoder inversion is probably wrong.`
+            : `Position went ${sign > 0 ? "down with positive" : "up with negative"} voltage, so the voltage was set back to 0 V. The motor or encoder inversion is probably wrong. If gravity is pulling the mechanism, it can also be stronger than this voltage; try a little more voltage before changing inversions.`,
         )
       } else setWarning(null)
     }, 20)
     return () => clearInterval(id)
-  }, [active, mechanismName, axis, nt])
+  }, [active, mechanismName, axis, nt, flywheel])
 
   const begin = async () => {
     setError(null)
@@ -286,7 +298,9 @@ function CheckBody() {
             <TrialStatus label={`Negative voltage moves ${lowLabel}`} result={trials.negative} />
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {`Position ${formatPosition(position, axis)}. Apply at least ${MIN_TEST_VOLTS} V either way until the mechanism moves. One direction is enough.`}
+            {flywheel
+              ? `Speed ${velocity === undefined ? "—" : `${velocity.toFixed(0)} RPM`}. Apply at least ${MIN_TEST_VOLTS} V either way until the speed changes. One direction is enough: positive voltage should speed it up forward, and negative voltage slow it down or spin it in reverse.`
+              : `Position ${formatPosition(position, axis)}. Apply at least ${MIN_TEST_VOLTS} V either way until the mechanism moves. One direction is enough.`}
           </p>
 
           <div className="flex flex-wrap gap-2">
