@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
 import { Notice } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
@@ -40,6 +41,11 @@ export interface VoltageSettings {
   rampDownRate: number
   /** An elevator's or arm's gravity hold voltage, added to every drive and sent between presses (kG for an arm). */
   gravityVolts: number
+  /**
+   * During Live Tuning, stay in voltage mode between presses (at the gravity hold voltage, or 0 V) until the Live tune
+   * card goes back to Setpoints or this is turned off. Off, letting go hands back to the closed loop at once.
+   */
+  stayInVoltage: boolean
 }
 
 const DEFAULT_SETTINGS: VoltageSettings = {
@@ -51,6 +57,7 @@ const DEFAULT_SETTINGS: VoltageSettings = {
   release: "cut",
   rampDownRate: 4,
   gravityVolts: 0,
+  stayInVoltage: true,
 }
 
 export type LiveTab = "setpoints" | "voltage"
@@ -97,7 +104,7 @@ function holdVolts(kind: string, gravity: number, pos: number | undefined) {
 export function VoltageDrive() {
   const { nt, mechanismName, axis, kind, session, starting, startLiveTuning, stop, verified, positional, tuningUnlocked } =
     useTuner()
-  const { settings } = useLiveTune()
+  const { settings, update } = useLiveTune()
   const { position, lower: softLower, upper: softUpper } = useAxisValues()
   const topics = mechanismName ? yamsTopics(mechanismName) : null
   // Subscribing re-renders when the topic is announced by a YAMS version that supports it.
@@ -106,6 +113,8 @@ export function VoltageDrive() {
 
   const [driving, setDriving] = useState<Dir | null>(null)
   const [rampingDown, setRampingDown] = useState(false)
+  /** During Live Tuning: staying in voltage control between presses, with the closed loop off. */
+  const [held, setHeld] = useState(false)
   const [applied, setApplied] = useState(0)
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -138,6 +147,23 @@ export function VoltageDrive() {
     [kind],
   )
 
+  /** During Live Tuning: leaves voltage control and hands back to the closed loop where the mechanism is now. */
+  const handBack = useCallback(() => {
+    setHeld(false)
+    if (!mechanismName) return
+    const t = yamsTopics(mechanismName)
+    // Seed the closed loop before releasing voltage, so it holds where the mechanism is instead of jumping back.
+    if (flywheel) {
+      if (heldVelocity.current !== null) nt.set(t.tuning.setpointVelocity, heldVelocity.current)
+    } else {
+      const pos = axisReader(nt, mechanismName, axis).position()
+      if (pos !== undefined) nt.set(t.tuning.setpointPosition, pos)
+    }
+    nt.set(t.tuning.voltageSetpoint, 0)
+    nt.set(t.tuning.voltageEnabled, false)
+    heldVelocity.current = null
+  }, [nt, mechanismName, axis, flywheel])
+
   const endDrive = useCallback(() => {
     if (timer.current !== null) {
       clearInterval(timer.current)
@@ -150,36 +176,55 @@ export function VoltageDrive() {
     if (!mechanismName) return
     const t = yamsTopics(mechanismName)
     const pos = axisReader(nt, mechanismName, axis).position()
-    if (sessionRef.current === "tune") {
-      // Seed the closed loop before releasing voltage, so it holds where the drive stopped instead of jumping back.
-      if (flywheel) {
-        if (heldVelocity.current !== null) nt.set(t.tuning.setpointVelocity, heldVelocity.current)
-      } else if (pos !== undefined) nt.set(t.tuning.setpointPosition, pos)
-      nt.set(t.tuning.voltageSetpoint, 0)
-      nt.set(t.tuning.voltageEnabled, false)
-    } else if (sessionRef.current === "jog") {
-      // Stay in voltage mode: the closed loop may not be tuned yet. 0 V, or the gravity hold voltage.
+    if (sessionRef.current === "tune" && !settingsRef.current.stayInVoltage) {
+      handBack()
+      return
+    }
+    if (sessionRef.current === "tune" || sessionRef.current === "jog") {
+      // Stay in voltage mode at the gravity hold voltage, or 0 V: with voltage only, the closed loop may not be tuned
+      // yet; during Live Tuning, until the card goes back to Setpoints.
       const hold = holdAt(pos)
       nt.set(t.tuning.voltageSetpoint, hold)
       nt.set(t.tuning.voltageEnabled, true)
       setApplied(hold)
+      if (sessionRef.current === "tune") setHeld(true)
+      return
     }
     heldVelocity.current = null
-  }, [nt, mechanismName, axis, flywheel, holdAt])
+  }, [nt, mechanismName, axis, holdAt, handBack])
 
   useEffect(() => {
     if (!active && timer.current !== null) endDrive()
+    if (!active) {
+      heldVelocity.current = null
+      setHeld(false)
+    }
   }, [active, endDrive])
-  useEffect(() => () => endDrive(), [endDrive])
-
-  // Between presses with voltage only, keep sending the gravity hold voltage: an arm's changes with its angle.
+  // Leaving the Voltage tab (back to Setpoints) hands back to the closed loop.
+  useEffect(
+    () => () => {
+      if (timer.current !== null) {
+        clearInterval(timer.current)
+        timer.current = null
+      }
+      if (sessionRef.current === "tune") handBack()
+    },
+    [handBack],
+  )
+  // Turning off staying in voltage mode hands back at once.
   useEffect(() => {
-    if (session !== "jog" || settings.gravityVolts === 0 || !mechanismName) return
+    if (!settings.stayInVoltage && held && timer.current === null && sessionRef.current === "tune") handBack()
+  }, [settings.stayInVoltage, held, handBack])
+
+  // Between presses in voltage mode, keep sending the gravity hold voltage: an arm's changes with its angle.
+  useEffect(() => {
+    const between = session === "jog" || (session === "tune" && held)
+    if (!between || settings.gravityVolts === 0 || !mechanismName) return
     const reader = axisReader(nt, mechanismName, axis)
     const t = yamsTopics(mechanismName)
     let last: number | null = null
     const id = window.setInterval(() => {
-      if (timer.current !== null || sessionRef.current !== "jog") {
+      if (timer.current !== null || (sessionRef.current !== "jog" && sessionRef.current !== "tune")) {
         last = null
         return
       }
@@ -190,7 +235,7 @@ export function VoltageDrive() {
       nt.set(t.tuning.voltageEnabled, true)
     }, LOOP_MS)
     return () => clearInterval(id)
-  }, [session, settings.gravityVolts, mechanismName, nt, axis, holdAt])
+  }, [session, held, settings.gravityVolts, mechanismName, nt, axis, holdAt])
 
   const boundsRef = useRef(bounds)
   boundsRef.current = bounds
@@ -215,7 +260,8 @@ export function VoltageDrive() {
         return setNote(`Already at the ${dir > 0 ? "upper" : "lower"} end of the ${boundLabel} (${formatPosition(end, axis)}).`)
       }
     }
-    heldVelocity.current = flywheel ? (nt.getNumber(t.tuning.setpointVelocity) ?? null) : null
+    // Kept from the first press, so handing back after several goes back to the setpoint from before them.
+    if (heldVelocity.current === null && flywheel) heldVelocity.current = nt.getNumber(t.tuning.setpointVelocity) ?? null
     nt.set(t.tuning.voltageSetpoint, holdAt(startPos))
     nt.set(t.tuning.voltageEnabled, true)
     setDriving(dir)
@@ -374,12 +420,30 @@ export function VoltageDrive() {
           </p>
         </div>
       )}
-      {session === "tune" && (
-        <p className="text-sm text-muted-foreground">
-          {flywheel
-            ? "Letting go hands back to Live Tuning at the setpoint it had."
-            : "Letting go hands back to Live Tuning, which holds where it stopped."}
-        </p>
+      {(session === "tune" || !active) && (
+        <div className="flex items-start gap-3 rounded-md border border-border p-3">
+          <Switch
+            id="stay-in-voltage"
+            checked={settings.stayInVoltage}
+            onCheckedChange={(v) => update({ stayInVoltage: v === true })}
+            className="mt-0.5"
+          />
+          <label htmlFor="stay-in-voltage" className="flex flex-col gap-0.5 text-sm">
+            <span className="font-medium">Stay in voltage control</span>
+            <span className="text-muted-foreground">
+              {settings.stayInVoltage
+                ? `During Live Tuning, letting go keeps voltage control at ${
+                    settings.gravityVolts !== 0 && !flywheel ? "the gravity hold voltage" : "0 V"
+                  }. Going back to Setpoints, or turning this off, hands back to the closed loop${flywheel ? " at the setpoint it had" : ", which holds where the mechanism is"}.`
+                : flywheel
+                  ? "Letting go hands back to Live Tuning at the setpoint it had."
+                  : "Letting go hands back to Live Tuning, which holds where it stopped."}
+            </span>
+          </label>
+        </div>
+      )}
+      {session === "tune" && held && (
+        <p className="font-mono text-xs uppercase tracking-wide text-hazard">In voltage control. The closed loop is off.</p>
       )}
       {note && <Notice>{note}</Notice>}
       {error && <Notice tone="danger">{error}</Notice>}
