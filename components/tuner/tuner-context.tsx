@@ -95,6 +95,10 @@ interface TunerApi {
 
   verified: VerifiedRange
   setVerifiedBound: (side: "lower" | "upper", value: number | null) => void
+  /** The range the range step found, before any change from the Limits tab. */
+  foundRange: VerifiedRange
+  /** Changes the allowed range from the Limits tab, keeping what the range step found. */
+  overrideVerifiedBound: (side: "lower" | "upper", value: number) => void
   rangeVerified: boolean
   requiresRangeVerification: boolean
   /** Mechanism has a finite range of travel (elevator, arm, non-continuous pivot). */
@@ -173,6 +177,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const [kind, setKindState] = useState<MechanismKind>("arm")
   const [continuous, setContinuousState] = useState(false)
   const [verified, setVerified] = useState<VerifiedRange>({ lower: null, upper: null })
+  const [foundRange, setFoundRange] = useState<VerifiedRange>({ lower: null, upper: null })
   const [mechanismConfirmed, setMechanismConfirmed] = useState(false)
   const [checklistConfirmed, setChecklistConfirmed] = useState(false)
   const [stallCurrent, setStallCurrent] = useState(DEFAULT_STALL_CURRENT)
@@ -206,6 +211,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   // Anything that changes what is being moved invalidates every safety confirmation.
   const resetSafety = useCallback(() => {
     setVerified({ lower: null, upper: null })
+    setFoundRange({ lower: null, upper: null })
     setMechanismConfirmed(false)
     setChecklistConfirmed(false)
     setCurrentAsWarning(false)
@@ -540,6 +546,10 @@ export function TunerProvider({ children }: { children: ReactNode }) {
 
   const setVerifiedBound = useCallback((side: "lower" | "upper", value: number | null) => {
     setVerified((v) => ({ ...v, [side]: value }))
+    setFoundRange((v) => ({ ...v, [side]: value }))
+  }, [])
+  const overrideVerifiedBound = useCallback((side: "lower" | "upper", value: number) => {
+    setVerified((v) => ({ ...v, [side]: value }))
   }, [])
 
   const clearLastStop = useCallback(() => setLastStop(null), [])
@@ -563,6 +573,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     axis,
     verified,
     setVerifiedBound,
+    foundRange,
+    overrideVerifiedBound,
       rangeVerified,
       positional,
       isSimulation,

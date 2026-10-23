@@ -2,10 +2,10 @@
 
 import { useState, type ReactNode } from "react"
 import { Input } from "@/components/ui/input"
-import { useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
+import { useAxisValues, useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
 import { CardTabs, Panel } from "@/components/tuner/panel"
 import { CurrentTripField } from "@/components/tuner/safety-checklist"
-import { GAIN_DEFS, axisReader, positionUnit, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
+import { GAIN_DEFS, axisReader, formatPosition, positionUnit, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 
 const GAIN_GROUPS: { key: GainDef["group"]; label: string }[] = [
@@ -20,7 +20,7 @@ const TABS = [
 ] as const
 
 export function GainsPanel() {
-  const { nt, mechanismName, status, kind, axis, positional } = useTuner()
+  const { nt, mechanismName, status, kind, axis, positional, requiresRangeVerification } = useTuner()
   useNtVersion()
   const [tab, setTab] = useState<(typeof TABS)[number][0]>("gains")
   const prefix = mechanismName ? yamsTopics(mechanismName).tuningPrefix : ""
@@ -72,6 +72,7 @@ export function GainsPanel() {
               <CurrentTripField />
             </div>
           </GainGroup>
+          {positional && requiresRangeVerification && <RangeOfMotion />}
           {softLimits && <SoftLimits lowerTopic={softLimits.lowerLimitTopic} upperTopic={softLimits.upperLimitTopic} />}
           {group("ramp", "Ramp rate")}
         </>
@@ -85,6 +86,155 @@ function GainGroup({ label, children }: { label: string; children: ReactNode }) 
     <div className="flex flex-col gap-2">
       <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
       {children}
+    </div>
+  )
+}
+
+/**
+ * The allowed range of motion: found in the range step, and changeable here. Live Tuning stops if the mechanism leaves
+ * it, and setpoints are limited to it.
+ */
+function RangeOfMotion() {
+  const { verified, overrideVerifiedBound, foundRange: start, axis, session } = useTuner()
+  const { position } = useAxisValues()
+  const unit = positionUnit(axis)
+  const check = (side: "lower" | "upper", v: number): string | null => {
+    const other = side === "lower" ? verified.upper : verified.lower
+    if (other !== null && (side === "lower" ? v >= other : v <= other)) {
+      return side === "lower"
+        ? `The lower end must be below the upper end (${formatPosition(other, axis)}).`
+        : `The upper end must be above the lower end (${formatPosition(other, axis)}).`
+    }
+    // Live Tuning stops the moment the mechanism is outside the range, so it can't be moved past where it is now.
+    if (session !== null && position !== undefined && (side === "lower" ? position < v : position > v)) {
+      return `The mechanism is at ${formatPosition(position, axis)}, outside that range. Move it first.`
+    }
+    return null
+  }
+  return (
+    <GainGroup label="Range of motion">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {(["lower", "upper"] as const).map((side) => (
+          <RangeInput
+            key={`${side}|${axis}`}
+            id={`range-${side}`}
+            label={side === "lower" ? "Lower" : "Upper"}
+            unit={unit}
+            digits={axis === "linear" ? 3 : 1}
+            value={verified[side]}
+            was={start[side]}
+            check={(v) => check(side, v)}
+            warning={
+              start[side] !== null && verified[side] !== null && (side === "lower" ? verified[side] < start[side] : verified[side] > start[side])
+                ? `Warning: ${side === "lower" ? "below" : "above"} the verified ${side} end (${formatPosition(start[side] as number, axis)}).`
+                : null
+            }
+            onCommit={(v) => overrideVerifiedBound(side, v)}
+          />
+        ))}
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Live Tuning stops if the mechanism leaves this range, and setpoints are limited to it. It can go past what you
+        verified, but that can drive the mechanism into a hard stop.
+      </p>
+    </GainGroup>
+  )
+}
+
+function RangeInput({
+  id,
+  label,
+  unit,
+  digits,
+  value,
+  was,
+  check,
+  warning,
+  onCommit,
+}: {
+  id: string
+  label: string
+  unit: string
+  digits: number
+  value: number | null
+  was: number | null
+  check: (v: number) => string | null
+  /** Shown under the field while the value is past what was verified. */
+  warning: string | null
+  onCommit: (v: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const shown = draft ?? (value === null ? "" : value.toFixed(digits))
+  const apply = (): boolean => {
+    if (draft === null) return true
+    const v = Number(draft)
+    if (draft.trim() === "" || !Number.isFinite(v)) {
+      setError("Enter a number.")
+      return false
+    }
+    const problem = check(v)
+    if (problem) {
+      setError(problem)
+      return false
+    }
+    if (v !== value) onCommit(v)
+    setDraft(null)
+    setError(null)
+    return true
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="flex justify-between gap-2 font-mono text-xs">
+        <span>{label}</span>
+        <span className="text-muted-foreground">{unit}</span>
+      </label>
+      <Input
+        id={id}
+        type="number"
+        step="any"
+        aria-invalid={error !== null}
+        aria-describedby={error ? `${id}-error` : undefined}
+        placeholder="Not set"
+        className={cn("h-8 font-mono", draft !== null && "border-hazard")}
+        value={shown}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setError(null)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            apply()
+          } else if (e.key === "Escape") {
+            e.preventDefault()
+            setDraft(null)
+            setError(null)
+          }
+        }}
+        onBlur={() => {
+          if (!apply()) setDraft(null)
+        }}
+      />
+      {error && (
+        <p id={`${id}-error`} className="text-xs leading-snug text-destructive">
+          {error}
+        </p>
+      )}
+      {warning && !error && <p className="text-xs leading-snug text-hazard">{warning}</p>}
+      {was !== null && value !== was && (
+        <button
+          type="button"
+          onClick={() => {
+            if (check(was) === null) onCommit(was)
+            setDraft(null)
+          }}
+          title={`Restore the ${label.toLowerCase()} end to the verified value`}
+          className="self-start rounded-sm font-mono text-[11px] leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {`was ${was.toFixed(digits)}`}
+        </button>
+      )}
     </div>
   )
 }
@@ -124,7 +274,7 @@ function SoftLimits({ lowerTopic, upperTopic }: { lowerTopic: string; upperTopic
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
         {verifiedRange
-          ? "The robot won't drive past these. Live Tuning still stops if the mechanism leaves the verified range."
+          ? "The robot won't drive past these. Live Tuning still stops if the mechanism leaves the range of motion above."
           : "The robot won't drive past these. The lower limit must be below the upper one."}
       </p>
     </GainGroup>
