@@ -18,25 +18,21 @@ type Dir = -1 | 1
 /** What letting go of a drive button does: cut the voltage to 0 at once, or ramp it down to 0. */
 type Release = "cut" | "ramp"
 
-const DEFAULT_VOLTS = 1
 /** Battery voltage: nothing above this can be applied anyway. */
 const HARD_LIMIT_VOLTS = 12
 const LOOP_MS = 20
-/** Within this many reach tolerances of an end, the voltage is halved to limit overshoot. */
-const SLOW_ZONE_TOLERANCES = 8
+/** A held drive button ramps from 0 to its voltage over this long, so a press never slams the mechanism. */
+const BUTTON_RAMP_MS = 400
 /** The gravity hold voltage stays within this, in volts: it only has to balance the mechanism's weight. */
 const MAX_GRAVITY_VOLTS = 3
 const GRAVITY_STEP_VOLTS = 0.02
 
 export interface VoltageSettings {
-  /** The drive voltage's magnitude, between minVolts and maxVolts. */
-  volts: number
+  /** The voltage slider's ends, in volts: at most 0 and at least 0. The drive buttons drive at these. */
   minVolts: number
   maxVolts: number
-  /** Voltage ramps from 0 to the drive voltage over this long, so a press never slams the mechanism. */
-  rampUpMs: number
-  /** Halve the voltage near an end of the range. */
-  slowNearEnds: boolean
+  /** Letting go of the voltage slider goes back to 0 V. Off, the voltage holds until changed. */
+  springBack: boolean
   release: Release
   /** Volts per second, when the release ramps down. */
   rampDownRate: number
@@ -50,11 +46,9 @@ export interface VoltageSettings {
 }
 
 const DEFAULT_SETTINGS: VoltageSettings = {
-  volts: DEFAULT_VOLTS,
-  minVolts: 0.25,
-  maxVolts: 3,
-  rampUpMs: 400,
-  slowNearEnds: true,
+  minVolts: -2,
+  maxVolts: 2,
+  springBack: true,
   release: "cut",
   rampDownRate: 4,
   gravityVolts: 0,
@@ -96,7 +90,8 @@ function holdVolts(kind: string, gravity: number, pos: number | undefined) {
 }
 
 /**
- * The Live tune card's Voltage tab. Drives the mechanism with voltage while a button is held, like finding the range of
+ * The Live tune card's Voltage tab. Drives the mechanism with voltage while a button is held or the slider is dragged
+ * (its ends are the buttons' voltages and can be changed), like finding the range of
  * motion but with nothing to mark. It stops at the ends of the verified range (or the soft limits). During Live Tuning,
  * letting go hands back to the closed loop, which holds where it stopped. Otherwise the motor gets 0 V (or the gravity
  * hold voltage) between presses. The settings are in the Settings card's Voltage tab.
@@ -112,6 +107,8 @@ export function VoltageDrive() {
   const supported = !!topics && nt.isAnnounced(topics.tuning.voltageEnabled) && nt.isAnnounced(topics.tuning.voltageSetpoint)
 
   const [driving, setDriving] = useState<Dir | null>(null)
+  /** The voltage slider's position. It goes back to 0 whenever a drive ends. */
+  const [sliderVolts, setSliderVolts] = useState(0)
   const [rampingDown, setRampingDown] = useState(false)
   /** During Live Tuning: staying in voltage control between presses, with the closed loop off. */
   const [held, setHeld] = useState(false)
@@ -140,6 +137,10 @@ export function VoltageDrive() {
   settingsRef.current = settings
   /** The voltage last sent, which a ramp down starts from. */
   const sentVolts = useRef(0)
+  /** The voltage asked for right now, signed: a held button's end of the slider, or the slider itself. 0 just holds. */
+  const command = useRef(0)
+  const rampingDownRef = useRef(false)
+  rampingDownRef.current = rampingDown
   /** A flywheel's velocity setpoint before the drive, restored when Live Tuning takes back over. */
   const heldVelocity = useRef<number | null>(null)
   const holdAt = useCallback(
@@ -172,7 +173,9 @@ export function VoltageDrive() {
     setDriving(null)
     setRampingDown(false)
     setApplied(0)
+    setSliderVolts(0)
     sentVolts.current = 0
+    command.current = 0
     if (!mechanismName) return
     const t = yamsTopics(mechanismName)
     const pos = axisReader(nt, mechanismName, axis).position()
@@ -240,34 +243,50 @@ export function VoltageDrive() {
   const boundsRef = useRef(bounds)
   boundsRef.current = bounds
 
-  const beginDrive = (dir: Dir) => {
-    if (!active || !mechanismName || !supported) return
-    if (timer.current !== null) endDrive()
+  const endOf = (d: Dir) => {
+    const b = boundsRef.current
+    return b ? (d > 0 ? b[1] : b[0]) : undefined
+  }
+  /** At, or past, the end of the range in that direction, so no voltage should push that way. Never for a flywheel. */
+  const atEnd = (d: Dir, pos: number | undefined) => {
+    const end = endOf(d)
+    return !flywheel && end !== undefined && pos !== undefined && (end - pos) * d <= jogParams(axis).reachTolerance
+  }
+
+  /**
+   * Drives with a voltage, signed: from a held button (which ramps up) or from the slider (which doesn't, since it is
+   * moved by hand). While a drive runs, a new voltage just replaces the old one. It stops at the ends of the range.
+   */
+  const startDrive = (volts: number, fromButton: boolean) => {
+    if (!active || !mechanismName || !supported || volts === 0) return
     const reader = axisReader(nt, mechanismName, axis)
     const t = yamsTopics(mechanismName)
-    const params = jogParams(axis)
-    const endOf = (d: Dir) => {
-      const b = boundsRef.current
-      return b ? (d > 0 ? b[1] : b[0]) : undefined
-    }
+    const dir: Dir = volts > 0 ? 1 : -1
     const startPos = reader.position()
     setNote(null)
     setError(null)
-    const end = endOf(dir)
-    if (!flywheel) {
-      if (startPos === undefined) return setError("No position telemetry. Set the telemetry verbosity to HIGH on the robot.")
-      if (end !== undefined && (end - startPos) * dir <= params.reachTolerance) {
-        return setNote(`Already at the ${dir > 0 ? "upper" : "lower"} end of the ${boundLabel} (${formatPosition(end, axis)}).`)
-      }
+    if (!flywheel && startPos === undefined) {
+      setError("No position telemetry. Set the telemetry verbosity to HIGH on the robot.")
+      return
     }
+    if (atEnd(dir, startPos)) {
+      const end = endOf(dir) as number
+      command.current = 0
+      setSliderVolts(0)
+      setNote(`Already at the ${dir > 0 ? "upper" : "lower"} end of the ${boundLabel} (${formatPosition(end, axis)}).`)
+      return
+    }
+    command.current = volts
+    if (fromButton) setDriving(dir)
+    if (timer.current !== null && !rampingDownRef.current) return
+    if (timer.current !== null) clearInterval(timer.current)
+    setRampingDown(false)
     // Kept from the first press, so handing back after several goes back to the setpoint from before them.
     if (heldVelocity.current === null && flywheel) heldVelocity.current = nt.getNumber(t.tuning.setpointVelocity) ?? null
     nt.set(t.tuning.voltageSetpoint, holdAt(startPos))
     nt.set(t.tuning.voltageEnabled, true)
-    setDriving(dir)
 
-    const startedAt = performance.now()
-    const { volts: drive, rampUpMs, slowNearEnds } = settingsRef.current
+    const rampFrom = fromButton ? performance.now() : null
     let sent = 0
     timer.current = window.setInterval(() => {
       if (sessionRef.current !== "tune" && sessionRef.current !== "jog") {
@@ -275,25 +294,21 @@ export function VoltageDrive() {
         return
       }
       const pos = reader.position()
-      const target = endOf(dir)
-      if (!flywheel) {
-        if (pos === undefined) {
-          endDrive()
-          return
-        }
-        if (target !== undefined && (target - pos) * dir <= params.reachTolerance) {
-          endDrive()
-          setNote(`Stopped at the ${dir > 0 ? "upper" : "lower"} end of the ${boundLabel} (${formatPosition(target, axis)}).`)
-          return
-        }
+      if (!flywheel && pos === undefined) {
+        endDrive()
+        return
       }
-      const ramp = rampUpMs > 0 ? Math.min(1, (performance.now() - startedAt) / rampUpMs) : 1
-      // Near an end, but never across more than a quarter of the range, or a short range would be driven at half voltage.
-      const range = boundsRef.current ? boundsRef.current[1] - boundsRef.current[0] : Infinity
-      const slowZone = Math.min(params.reachTolerance * SLOW_ZONE_TOLERANCES, range / 4)
-      const slow = slowNearEnds && !flywheel && target !== undefined && pos !== undefined && Math.abs(target - pos) <= slowZone
+      const target = command.current
+      const d = Math.sign(target) as Dir | 0
+      if (d !== 0 && atEnd(d, pos)) {
+        const end = endOf(d) as number
+        endDrive()
+        setNote(`Stopped at the ${d > 0 ? "upper" : "lower"} end of the ${boundLabel} (${formatPosition(end, axis)}).`)
+        return
+      }
+      const ramp = rampFrom === null ? 1 : Math.min(1, (performance.now() - rampFrom) / BUTTON_RAMP_MS)
       // On top of the gravity hold voltage, so driving up and down feel the same.
-      const out = Math.round((holdAt(pos) + dir * drive * ramp * (slow ? 0.5 : 1)) * 1000) / 1000
+      const out = Math.round((holdAt(pos) + target * ramp) * 1000) / 1000
       if (out !== sent) {
         sent = out
         sentVolts.current = out
@@ -301,6 +316,20 @@ export function VoltageDrive() {
         setApplied(out)
       }
     }, LOOP_MS)
+  }
+  const beginDrive = (dir: Dir) => startDrive(dir > 0 ? settingsRef.current.maxVolts : settingsRef.current.minVolts, true)
+
+  /** The slider: a new position drives at that voltage, 0 just holds. */
+  const slide = (v: number) => {
+    setSliderVolts(v)
+    if (!active || !supported) return
+    if (v === 0) {
+      // Back at 0 with no button held: the same as letting go.
+      if (driving === null) releaseDrive()
+      else command.current = 0
+      return
+    }
+    startDrive(v, false)
   }
 
   /** Letting go: cut at once, or ramp down to the hold voltage first. Reaching an end always cuts at once. */
@@ -315,8 +344,10 @@ export function VoltageDrive() {
     const reader = axisReader(nt, mechanismName, axis)
     const t = yamsTopics(mechanismName)
     const params = jogParams(axis)
-    const dir = driving
+    const dir = (Math.sign(command.current) || null) as Dir | null
     let out = sentVolts.current
+    command.current = 0
+    setSliderVolts(0)
     setDriving(null)
     setRampingDown(true)
     timer.current = window.setInterval(() => {
@@ -345,7 +376,7 @@ export function VoltageDrive() {
   }
 
   const holdProps = (dir: Dir) => ({
-    disabled: !active || !supported,
+    disabled: !active || !supported || (dir > 0 ? settings.maxVolts <= 0 : settings.minVolts >= 0),
     onPointerDown: (e: React.PointerEvent) => {
       e.currentTarget.setPointerCapture(e.pointerId)
       beginDrive(dir)
@@ -375,8 +406,8 @@ export function VoltageDrive() {
     <>
       <p className="text-sm leading-relaxed text-muted-foreground">
         {bounds
-          ? `Hold a button to move the mechanism with voltage. It stops at the ends of the ${boundLabel}.`
-          : "Hold a button to move the mechanism with voltage."}
+          ? `Hold a button, or drag the slider, to move the mechanism with voltage. It stops at the ends of the ${boundLabel}.`
+          : "Hold a button, or drag the slider, to move the mechanism with voltage."}
       </p>
       {!supported && <Notice tone="warn">This YAMS version can’t drive with voltage. Update YAMS on the robot.</Notice>}
       {positional && (
@@ -392,16 +423,75 @@ export function VoltageDrive() {
       <div className="grid grid-cols-2 gap-2">
         <button type="button" {...holdProps(-1)} className={holdClass} data-active={driving === -1}>
           <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
-          {`Hold: drive ${negLabel} (−${formatVolts(settings.volts)})`}
+          {`Hold: drive ${negLabel} (${formatVolts(settings.minVolts)})`}
         </button>
         <button type="button" {...holdProps(1)} className={holdClass} data-active={driving === 1}>
-          {`Hold: drive ${posLabel} (+${formatVolts(settings.volts)})`}
+          {`Hold: drive ${posLabel} (+${formatVolts(settings.maxVolts)})`}
           <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
         </button>
       </div>
-      <p className="font-mono text-sm tabular" aria-live="off">
-        {rampingDown ? `Ramping down ${formatVolts(applied)}` : `Applied ${formatVolts(applied)}`}
-      </p>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <span>Voltage</span>
+          <span className="font-mono normal-case tabular text-foreground" aria-live="off">
+            {rampingDown ? `Ramping down ${formatVolts(applied)}` : `Applied ${formatVolts(applied)}`}
+          </span>
+        </div>
+        {/* Drag for any voltage in between. It stops at the ends of the range like the buttons do. */}
+        <Slider
+          aria-label="Voltage"
+          min={settings.minVolts}
+          max={settings.maxVolts}
+          step={0.05}
+          disabled={!active || !supported}
+          value={Math.min(settings.maxVolts, Math.max(settings.minVolts, sliderVolts))}
+          onValueChange={(raw) => slide(Math.round((Array.isArray(raw) ? raw[0] : raw) * 100) / 100)}
+          onValueCommitted={() => {
+            if (settingsRef.current.springBack) {
+              command.current = 0
+              releaseDrive()
+            }
+          }}
+        />
+        <div className="flex items-center justify-between gap-2 font-mono text-xs text-muted-foreground tabular">
+          <EditableBound
+            label="Minimum voltage"
+            value={settings.minVolts}
+            digits={2}
+            step={0.1}
+            format={formatVolts}
+            onSubmit={(v) => {
+              const next = Math.max(-HARD_LIMIT_VOLTS, Math.min(0, v))
+              if (next >= settings.maxVolts) return `Minimum must be below ${formatVolts(settings.maxVolts)}.`
+              update({ minVolts: next })
+              return next !== v ? `Limited to ${formatVolts(next)}.` : null
+            }}
+          />
+          <label htmlFor="voltage-spring-back" className="flex items-center gap-2 font-sans">
+            <Switch
+              id="voltage-spring-back"
+              size="sm"
+              checked={settings.springBack}
+              onCheckedChange={(v) => update({ springBack: v === true })}
+            />
+            Back to 0{"\u00a0"}V on release
+          </label>
+          <EditableBound
+            label="Maximum voltage"
+            value={settings.maxVolts}
+            digits={2}
+            step={0.1}
+            format={formatVolts}
+            align="end"
+            onSubmit={(v) => {
+              const next = Math.min(HARD_LIMIT_VOLTS, Math.max(0, v))
+              if (next <= settings.minVolts) return `Maximum must be above ${formatVolts(settings.minVolts)}.`
+              update({ maxVolts: next })
+              return next !== v ? `Limited to ${formatVolts(next)}.` : null
+            }}
+          />
+        </div>
+      </div>
       {!active && (
         <div className="flex flex-col gap-2">
           <Button
@@ -461,8 +551,9 @@ export function VoltageDrive() {
       <LiveRegion>{note && <Notice live={false}>{note}</Notice>}</LiveRegion>
       <LiveRegion assertive>{error && <Notice tone="danger" live={false}>{error}</Notice>}</LiveRegion>
       <p className="text-xs text-muted-foreground">
-        Hold <Kbd>Enter</Kbd> on a drive button to drive from the keyboard. Change the voltage and how it ramps in the
-        Settings card’s Voltage tab. Space stops everything.
+        Hold <Kbd>Enter</Kbd> on a drive button to drive from the keyboard. Select either end of the slider to change it.
+        What happens when you let go, and the gravity hold voltage, are in the Settings card’s Voltage tab. Space stops
+        everything.
       </p>
     </>
   )
@@ -472,81 +563,16 @@ export function VoltageDrive() {
 export function VoltageSettingsPanel() {
   const { nt, mechanismName, kind } = useTuner()
   const { settings, update } = useLiveTune()
-  const { volts, minVolts, maxVolts, rampUpMs, slowNearEnds, release, rampDownRate, gravityVolts } = settings
+  const { maxVolts, release, rampDownRate, gravityVolts } = settings
   const gravityLoaded = kind === "elevator" || kind === "arm"
   const kGTopic = mechanismName ? `${yamsTopics(mechanismName).tuningPrefix}closedloop/feedforward/kG` : null
   const robotKG = useNtValue<number>(kGTopic)
 
   return (
     <>
-      <Group label="Drive voltage">
-        <div className="flex justify-between font-mono text-sm tabular">
-          <span className="text-muted-foreground">Magnitude</span>
-          <span>{formatVolts(volts)}</span>
-        </div>
-        <Slider
-          aria-label="Drive voltage"
-          min={minVolts}
-          max={maxVolts}
-          step={0.05}
-          value={Math.min(maxVolts, Math.max(minVolts, volts))}
-          onValueChange={(v) => update({ volts: Math.round((Array.isArray(v) ? v[0] : v) * 100) / 100 })}
-        />
-        <div className="flex items-center justify-between font-mono text-xs text-muted-foreground tabular">
-          <EditableBound
-            label="Minimum drive voltage"
-            value={minVolts}
-            digits={2}
-            step={0.05}
-            format={formatVolts}
-            onSubmit={(v) => {
-              const next = Math.max(0.05, v)
-              if (next >= maxVolts) return `Minimum must be below ${formatVolts(maxVolts)}.`
-              update({ minVolts: next, volts: Math.max(volts, next) })
-              return next !== v ? `Raised to ${formatVolts(next)}.` : null
-            }}
-          />
-          <EditableBound
-            label="Maximum drive voltage"
-            value={maxVolts}
-            digits={2}
-            step={0.1}
-            format={formatVolts}
-            align="end"
-            onSubmit={(v) => {
-              const next = Math.min(HARD_LIMIT_VOLTS, v)
-              if (next <= minVolts) return `Maximum must be above ${formatVolts(minVolts)}.`
-              update({ maxVolts: next, volts: Math.min(volts, next) })
-              return next !== v ? `Limited to ${formatVolts(next)}.` : null
-            }}
-          />
-        </div>
-      </Group>
-
-      <Group label="Ramp up">
-        <NumberField
-          id="ramp-up"
-          label="Time to reach the drive voltage"
-          unit="ms"
-          value={rampUpMs}
-          min={0}
-          max={5000}
-          onCommit={(v) => update({ rampUpMs: Math.round(v) })}
-        />
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="size-4 accent-foreground"
-            checked={slowNearEnds}
-            onChange={(e) => update({ slowNearEnds: e.target.checked })}
-          />
-          Halve the voltage near an end of the range
-        </label>
-      </Group>
-
-      <Group label="When a drive button is released">
+      <Group label="When the voltage is let go">
         <Segmented
-          label="When a drive button is released"
+          label="When the voltage is let go"
           options={[["cut", "Cut to 0 V"], ["ramp", "Ramp to 0 V"]] as const}
           value={release}
           onChange={(v) => update({ release: v })}
@@ -563,7 +589,7 @@ export function VoltageSettingsPanel() {
               onCommit={(v) => update({ rampDownRate: v })}
             />
             <p className="text-xs leading-relaxed text-muted-foreground">
-              {`From ${formatVolts(volts)} that takes ${((volts / rampDownRate) * 1000).toFixed(0)} ms, and the mechanism keeps moving meanwhile. Reaching an end still cuts at once.`}
+              {`From ${formatVolts(maxVolts)} that takes ${((maxVolts / rampDownRate) * 1000).toFixed(0)}\u00a0ms, and the mechanism keeps moving meanwhile. Reaching an end still cuts at once.`}
             </p>
           </>
         )}
