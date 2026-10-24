@@ -1,5 +1,6 @@
 import { EMPTY, NBSP, num } from "@/lib/format"
 import type { LiveNT } from "@/lib/nt/live-nt"
+import type { NumberFormat } from "@/lib/number-format"
 
 export type MechanismKind = "elevator" | "arm" | "pivot" | "flywheel"
 export type Axis = "rotary" | "linear"
@@ -72,6 +73,20 @@ export interface GainDef {
   nonNegative: boolean
   group: "feedback" | "feedforward" | "profile" | "current" | "ramp"
   hint?: string
+  /** What the field accepts. Without it, any number. */
+  format?: NumberFormat
+}
+
+/**
+ * What each group's fields accept: gains up to 4 significant digits, current limits in whole amps, and ramp rates to
+ * the millisecond.
+ */
+const GROUP_FORMATS: Record<GainDef["group"], NumberFormat> = {
+  feedback: { significant: 4 },
+  feedforward: { significant: 4 },
+  profile: { significant: 4 },
+  current: { integer: true },
+  ramp: { decimals: 3 },
 }
 
 export type GainUnit = {
@@ -121,7 +136,7 @@ export function profileUnit(key: string, kind: MechanismKind, axis: Axis): GainU
   return null
 }
 
-export const GAIN_DEFS: GainDef[] = [
+const GAINS: Omit<GainDef, "format">[] = [
   { key: "kP", label: "kP", path: "closedloop/feedback/kP", nonNegative: true, group: "feedback" },
   { key: "kI", label: "kI", path: "closedloop/feedback/kI", nonNegative: true, group: "feedback" },
   { key: "kD", label: "kD", path: "closedloop/feedback/kD", nonNegative: true, group: "feedback" },
@@ -136,6 +151,8 @@ export const GAIN_DEFS: GainDef[] = [
   { key: "supplyLimit", label: "Supply limit", path: "current/limit/supply", nonNegative: true, group: "current", hint: "A" },
   { key: "closedRamp", label: "Closed-loop ramp", path: "ramprate/dutycycle/closedloop", nonNegative: true, group: "ramp", hint: "s" },
 ]
+
+export const GAIN_DEFS: GainDef[] = GAINS.map((g) => ({ ...g, format: { ...GROUP_FORMATS[g.group], negative: !g.nonNegative } }))
 
 /** Mechanism telemetry names published under /Tuning/ with a tunable setpoint. */
 export function discoverMechanisms(nt: LiveNT): string[] {

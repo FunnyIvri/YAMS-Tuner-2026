@@ -11,6 +11,8 @@ import { Kbd, LiveRegion, Notice, Segmented } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { Hint } from "@/components/tuner/hint"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
+import { SignToggle, flipSign } from "@/components/tuner/sign-toggle"
+import { nextText, parseFormatted, type NumberFormat } from "@/lib/number-format"
 import { axisReader, formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { formatVolts } from "@/lib/format"
 import { jogParams, overshootTolerance, STALL_DEBOUNCE_MS } from "@/lib/yams/safety"
@@ -44,6 +46,8 @@ const RUNAWAY_TOLERANCE = { linear: 0.1, rotary: 30 }
 const HOLD_SETTLE_MS = 1000
 /** The gravity hold voltage stays within this, in volts: it only has to balance the mechanism's weight. */
 const MAX_GRAVITY_VOLTS = 3
+/** Positions and voltages: any number, negative too. */
+const ANY_NUMBER: NumberFormat = { negative: true }
 /** One press of − or + on the gravity hold voltage. */
 const GRAVITY_STEP_VOLTS = 0.02
 /** Driving with a stick, below this fraction of the drive voltage a mechanism may just not move: no hard stop then. */
@@ -148,6 +152,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   /** Driving with a stick: how far it is pushed, 0 to 1, which scales the drive voltage. */
   const stickScale = useRef(1)
   const [gravityText, setGravityText] = useState("0")
+  const gravityInput = useRef<HTMLInputElement>(null)
+  const lowerInput = useRef<HTMLInputElement>(null)
+  const upperInput = useRef<HTMLInputElement>(null)
   const setGravity = (v: number) => {
     const next = Math.max(-MAX_GRAVITY_VOLTS, Math.min(MAX_GRAVITY_VOLTS, Math.round(v * 1000) / 1000))
     setGravityVolts(next)
@@ -733,18 +740,26 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
               ] as const
             ).map(([side, label, value, set]) => (
               <div key={side} className="flex flex-col gap-1.5">
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="text-xs uppercase tracking-wider text-muted-foreground">{`${label} (${unit})`}</span>
+                <label htmlFor={`defined-${side}`} className="text-xs uppercase tracking-wider text-muted-foreground">
+                  {`${label} (${unit})`}
+                </label>
+                <div className="flex gap-1">
                   <Input
+                    ref={side === "lower" ? lowerInput : upperInput}
+                    id={`defined-${side}`}
                     inputMode="decimal"
+                    autoComplete="off"
+                    spellCheck={false}
                     aria-invalid={definedError !== null && (definedLower !== "" || definedUpper !== "")}
                     aria-describedby="defined-range-error"
                     className="font-mono"
                     value={value}
-                    onChange={(e) => set(e.target.value)}
+                    onChange={(e) => set(nextText(value, e.target.value, ANY_NUMBER))}
                     onKeyDown={blurOnEnter}
                   />
-                </label>
+                  {/* The ends are only used once Use this range is pressed, so a flip just changes the text. */}
+                  <SignToggle label={`the ${side} end`} input={side === "lower" ? lowerInput : upperInput} onFlip={() => set(flipSign(value))} />
+                </div>
                 <Button
                   variant="outline"
                   className="h-auto min-h-9 whitespace-normal py-2"
@@ -835,18 +850,31 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
                 −
               </Button>
               <Input
+                ref={gravityInput}
                 inputMode="decimal"
+                autoComplete="off"
+                spellCheck={false}
                 aria-labelledby="gravity-label"
                 className="h-8 w-24 font-mono"
                 value={gravityText}
                 disabled={driving !== null || rampingDown}
-                onChange={(e) => setGravityText(e.target.value)}
+                onChange={(e) => setGravityText(nextText(gravityText, e.target.value, ANY_NUMBER))}
                 onBlur={() => {
-                  const v = Number.parseFloat(gravityText)
-                  if (!Number.isFinite(v)) setGravityText(String(gravityVolts))
+                  const v = parseFormatted(gravityText, ANY_NUMBER)
+                  if (v === null) setGravityText(String(gravityVolts))
                   else if (v !== gravityVolts) setGravity(v)
                 }}
                 onKeyDown={blurOnEnter}
+              />
+              <SignToggle
+                label="the gravity hold voltage"
+                input={gravityInput}
+                disabled={driving !== null || rampingDown}
+                onFlip={(editing) => {
+                  const next = flipSign(gravityText)
+                  if (editing) setGravityText(next)
+                  else setGravity(-gravityVolts)
+                }}
               />
               <span className="text-sm text-muted-foreground">V</span>
               <Button

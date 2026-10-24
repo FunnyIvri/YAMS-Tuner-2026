@@ -15,6 +15,8 @@ import { axisReader, formatPosition, wheelLabels, yamsTopics } from "@/lib/yams/
 import { formatVolts } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { jogParams } from "@/lib/yams/safety"
+import { SignToggle, flipSign } from "@/components/tuner/sign-toggle"
+import { nextText, parseFormatted, type NumberFormat } from "@/lib/number-format"
 
 const DEFAULT_MIN_VOLTS = -1
 const DEFAULT_MAX_VOLTS = 1
@@ -402,9 +404,11 @@ function VoltageEntry({
   const [note, setNote] = useState<string | null>(null)
   const [invalid, setInvalid] = useState(false)
 
-  const apply = () => {
-    const v = Number.parseFloat(text)
-    if (text.trim() === "" || !Number.isFinite(v)) {
+  const input = useRef<HTMLInputElement>(null)
+  const numberFormat: NumberFormat = { negative: min < 0 }
+  const apply = (value = text) => {
+    const v = parseFormatted(value, numberFormat)
+    if (v === null) {
       setInvalid(true)
       setNote("Enter a number of volts.")
       return
@@ -429,19 +433,19 @@ function VoltageEntry({
       </label>
       <div className="flex gap-2">
         <Input
+          ref={input}
           id={inputId}
-          type="number"
+          type="text"
           inputMode="decimal"
-          step={0.05}
-          min={min}
-          max={max}
+          autoComplete="off"
+          spellCheck={false}
           placeholder={`${min} to ${max}`}
           value={text}
           aria-invalid={invalid}
           aria-describedby={noteId}
           className="font-mono tabular"
           onChange={(e) => {
-            setText(e.target.value)
+            setText(nextText(text, e.target.value, numberFormat))
             setNote(null)
             setInvalid(false)
           }}
@@ -451,7 +455,9 @@ function VoltageEntry({
             apply()
           }}
         />
-        <Button variant="outline" onClick={apply}>
+        {/* Only changes the text: a voltage is never sent until Apply. */}
+        {numberFormat.negative && <SignToggle label="the voltage" input={input} onFlip={() => setText(flipSign(text))} />}
+        <Button variant="outline" onClick={() => apply()}>
           Apply
         </Button>
       </div>

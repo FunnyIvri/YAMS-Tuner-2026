@@ -13,6 +13,8 @@ import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, yamsTopics } from "@/lib/yams/topics"
 import { formatVolts } from "@/lib/format"
 import { jogParams } from "@/lib/yams/safety"
+import { SignToggle, flipSign } from "@/components/tuner/sign-toggle"
+import { nextText, parseFormatted, type NumberFormat } from "@/lib/number-format"
 
 type Dir = -1 | 1
 /** What letting go of a drive button does: cut the voltage to 0 at once, or ramp it down to 0. */
@@ -690,10 +692,13 @@ function NumberField({
   onCommit: (v: number) => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  const commit = () => {
-    if (draft === null) return
-    const v = Number(draft)
-    if (draft.trim() !== "" && Number.isFinite(v)) onCommit(Math.min(max, Math.max(min, v)))
+  const input = useRef<HTMLInputElement>(null)
+  const format: NumberFormat = { negative: min < 0 }
+  const shown = draft ?? String(value)
+  const commit = (text = draft) => {
+    if (text === null) return
+    const v = parseFormatted(text, format)
+    if (v !== null) onCommit(Math.min(max, Math.max(min, v)))
     setDraft(null)
   }
   return (
@@ -704,15 +709,17 @@ function NumberField({
         </label>
       )}
       <Input
+        ref={input}
         id={id}
-        type="number"
-        step="any"
+        type="text"
         inputMode="decimal"
+        autoComplete="off"
+        spellCheck={false}
         aria-label={hideLabel ? label : undefined}
         className="h-8 w-24 font-mono"
-        value={draft ?? String(value)}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        value={shown}
+        onChange={(e) => setDraft(nextText(shown, e.target.value, format))}
+        onBlur={() => commit()}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault()
@@ -723,6 +730,13 @@ function NumberField({
           }
         }}
       />
+      {format.negative && (
+        <SignToggle
+          label={`the ${label.toLowerCase()}`}
+          input={input}
+          onFlip={(editing) => (editing ? setDraft(flipSign(shown)) : commit(flipSign(shown)))}
+        />
+      )}
       <span className="text-muted-foreground">{unit}</span>
     </div>
   )

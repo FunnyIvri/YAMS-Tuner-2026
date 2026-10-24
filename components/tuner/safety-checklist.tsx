@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { useTuner } from "@/components/tuner/tuner-context"
 import { Field, Panel } from "@/components/tuner/panel"
 import { PRE_MOTION_CHECKLIST, needsRangeVerification } from "@/lib/yams/safety"
+import { inputModeFor, nextText, parseFormatted, type NumberFormat } from "@/lib/number-format"
 
 export function SafetyChecklist({ onContinue }: { onContinue: () => void }) {
   const { mechanismName, commandName, kind, continuous } = useTuner()
@@ -71,21 +72,57 @@ function ChecklistBody({ onContinue: done }: { onContinue: () => void }) {
 }
 
 /** The stator current that stops Live Tuning. Set on the checklist, then under the Settings card's Tuner tab. */
+const TRIP_FORMAT: NumberFormat = { integer: true }
+const MIN_TRIP = 5
+const MAX_TRIP = 120
+
+/** The current trip, in whole amps from 5 to 120. Applied on Enter or when the field is left. */
 export function CurrentTripField() {
   const { stallCurrent, setStallCurrent } = useTuner()
+  const [draft, setDraft] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const shown = draft ?? String(stallCurrent)
+  const apply = () => {
+    if (draft === null) return
+    const v = parseFormatted(draft, TRIP_FORMAT)
+    setDraft(null)
+    if (v === null) {
+      setNote(`Enter whole amps, ${MIN_TRIP} to ${MAX_TRIP}.`)
+      return
+    }
+    const next = Math.min(MAX_TRIP, Math.max(MIN_TRIP, v))
+    setStallCurrent(next)
+    setNote(next !== v ? `Limited to ${next}${"\u00a0"}A.` : null)
+  }
   return (
-    <Field label="Current trip (A)" htmlFor="stall" hint="Stator current above this for 250 ms stops Live Tuning.">
+    <Field
+      label="Current trip (A)"
+      htmlFor="stall"
+      hint={note ?? `Stator current above this for 250 ms stops Live Tuning. Whole amps, ${MIN_TRIP} to ${MAX_TRIP}.`}
+    >
       <Input
         id="stall"
-        type="number"
-        min={5}
-        max={120}
+        type="text"
+        inputMode={inputModeFor(TRIP_FORMAT)}
+        autoComplete="off"
+        spellCheck={false}
         className="font-mono"
-        value={stallCurrent}
+        value={shown}
         onChange={(e) => {
-          const v = Number(e.target.value)
-          if (Number.isFinite(v)) setStallCurrent(Math.min(120, Math.max(5, v)))
+          setDraft(nextText(shown, e.target.value, TRIP_FORMAT))
+          setNote(null)
         }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            apply()
+          } else if (e.key === "Escape") {
+            e.preventDefault()
+            setDraft(null)
+            setNote(null)
+          }
+        }}
+        onBlur={apply}
       />
     </Field>
   )
