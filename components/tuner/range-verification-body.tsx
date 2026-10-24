@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronLeft, ChevronRight, Flag, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
 import { Kbd, LiveRegion, Notice, Segmented } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
@@ -22,9 +24,9 @@ type Release = "cut" | "ramp"
 /** What drives the mechanism: holding the on-screen buttons, or a game controller's stick. */
 type DriveInput = "buttons" | "controller"
 
-const DEFAULT_DRIVE_VOLTS = 1
-const MIN_DRIVE_VOLTS = 0.25
-const DEFAULT_MAX_DRIVE_VOLTS = 3
+/** The voltage slider's ends to start with. The drive buttons drive at them. */
+const DEFAULT_MIN_VOLTS = -1
+const DEFAULT_MAX_VOLTS = 1
 /** Battery voltage: nothing above this can be applied anyway. */
 const HARD_LIMIT_VOLTS = 12
 /** Voltage ramps from 0 to the drive voltage over this long, so a press never slams the mechanism. */
@@ -84,9 +86,18 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const supported = !!topics && nt.isAnnounced(topics.tuning.voltageEnabled) && nt.isAnnounced(topics.tuning.voltageSetpoint)
 
   const [mode, setMode] = useState<Mode>("find")
-  const [driveVolts, setDriveVolts] = useState(DEFAULT_DRIVE_VOLTS)
-  const [maxDriveVolts, setMaxDriveVolts] = useState(DEFAULT_MAX_DRIVE_VOLTS)
-  const [minDriveVolts, setMinDriveVolts] = useState(MIN_DRIVE_VOLTS)
+  // The voltage slider's ends, at most 0 and at least 0. The drive buttons and the stick drive at them.
+  const [minVolts, setMinVolts] = useState(DEFAULT_MIN_VOLTS)
+  const [maxVolts, setMaxVolts] = useState(DEFAULT_MAX_VOLTS)
+  const endsRef = useRef({ min: minVolts, max: maxVolts })
+  endsRef.current = { min: minVolts, max: maxVolts }
+  /** The voltage slider's position, signed. It goes back to 0 whenever a drive ends. */
+  const [sliderVolts, setSliderVolts] = useState(0)
+  const sliderRef = useRef(0)
+  /** Letting go of the slider goes back to 0 V. Off, its voltage holds until changed. */
+  const [springBack, setSpringBack] = useState(true)
+  /** What started the drive that is running. */
+  const driveSource = useRef<"button" | "stick" | "slider" | null>(null)
   const [appliedVolts, setAppliedVolts] = useState(0)
   // Cut to 0 V by default for every mechanism. Ramping is a choice.
   const [release, setRelease] = useState<Release>("cut")
@@ -227,6 +238,9 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       }
       if (lastDrive.current && lastDrive.current.endedAt === null) lastDrive.current.endedAt = Date.now()
       sentVolts.current = 0
+      driveSource.current = null
+      sliderRef.current = 0
+      setSliderVolts(0)
       setDriving(null)
       setRampingDown(false)
       setAppliedVolts(0)
@@ -325,9 +339,19 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   }, [verifying, verifyHold, mechanismName, nt, axis, stop])
 
   /** Drives toward an end with voltage. With a target it stops there and marks it; without one it runs until released. */
-  const beginDrive = (dir: Dir, target?: number, byStick = false) => {
+  /**
+   * Drives toward an end. A button drives at the slider's end on that side and ramps up; the stick drives at a fraction
+   * of it; the slider drives at its own voltage, read every loop, with no ramp since it is moved by hand.
+   */
+  const beginDrive = (dir: Dir, target?: number, source: "button" | "stick" | "slider" = "button") => {
     if (!verifying || !mechanismName || !supported) return
+    const slid = sliderRef.current
     endDrive(false)
+    if (source === "slider") {
+      sliderRef.current = slid
+      setSliderVolts(slid)
+    }
+    const byStick = source !== "button"
     holdAt.current = null
     const reader = axisReader(nt, mechanismName, axis)
     const t = yamsTopics(mechanismName)
@@ -348,10 +372,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     nt.set(t.tuning.voltageSetpoint, holdVoltsAt(startPos))
     nt.set(t.tuning.voltageEnabled, true)
     lastDrive.current = { dir, endedAt: null }
+    driveSource.current = source
     setDriving(dir)
 
     const startedAt = performance.now()
-    const volts = driveVolts
+    // The magnitude at full stick or full button: the slider's end on this side.
+    const volts = dir > 0 ? endsRef.current.max : -endsRef.current.min
     let sent = 0
     let progressPos = startPos
     let stuckSince: number | null = null
@@ -404,10 +430,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         return
       }
 
-      const ramp = Math.min(1, (now - startedAt) / RAMP_MS)
+      const ramp = source === "slider" ? 1 : Math.min(1, (now - startedAt) / RAMP_MS)
       const nearTarget = target !== undefined && Math.abs(target - pos) <= params.reachTolerance * SLOW_ZONE_TOLERANCES
       // On top of the gravity hold voltage, so driving up and down feel the same and a press never jumps.
-      const scale = byStick ? stickScale.current : 1
+      // Below full voltage a mechanism may just not move, so the hard-stop check below waits for near full.
+      const scale =
+        source === "stick" ? stickScale.current : source === "slider" ? Math.min(1, Math.abs(sliderRef.current) / volts) : 1
       const out = Math.round((holdVoltsAt(pos) + dir * volts * scale * ramp * (nearTarget ? 0.5 : 1)) * 1000) / 1000
       if (out !== sent) {
         sent = out
@@ -428,7 +456,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             pos,
             target !== undefined
               ? `Stopped short of the defined end (${fmt(target)}) with no movement`
-              : `No movement at ${formatVolts(volts)}, likely a hard stop`,
+              : `No movement at ${formatVolts(volts * scale)}, likely a hard stop`,
           )
         }
       }
@@ -532,6 +560,24 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   // before it drives again.
   const beginDriveRef = useRef(beginDrive)
   beginDriveRef.current = beginDrive
+
+  /** The voltage slider: a new position drives that way at that voltage, 0 is the same as letting go. */
+  const slide = (v: number) => {
+    sliderRef.current = v
+    setSliderVolts(v)
+    if (!verifying || !supported) return
+    const sliding = driveSource.current === "slider" && timer.current !== null && !rampingDown
+    if (v === 0) {
+      if (sliding) releaseDrive()
+      return
+    }
+    const dir: Dir = v > 0 ? 1 : -1
+    // Already driving this way with the slider: the loop reads the new voltage itself.
+    if (sliding && driving === dir) return
+    const d = definedRef.current
+    if (d.mode === "define" && !d.ok) return
+    beginDrive(dir, d.mode === "define" ? (dir > 0 ? d.upper : d.lower) : undefined, "slider")
+  }
   const releaseDriveRef = useRef(releaseDrive)
   releaseDriveRef.current = releaseDrive
   const definedRef = useRef<{ mode: Mode; lower: number; upper: number; ok: boolean }>({ mode, lower: NaN, upper: NaN, ok: false })
@@ -577,7 +623,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       const d = definedRef.current
       if (d.mode === "define" && !d.ok) return
       drivingDir = dir
-      beginDriveRef.current(dir, d.mode === "define" ? (dir > 0 ? d.upper : d.lower) : undefined, true)
+      beginDriveRef.current(dir, d.mode === "define" ? (dir > 0 ? d.upper : d.lower) : undefined, "stick")
       if (timer.current === null) {
         // It did not start (already at that end, or past it).
         drivingDir = null
@@ -664,8 +710,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     setError(await startLiveTuning("verify"))
   }
 
+  // A button whose end of the slider is 0 has nothing to drive with.
+  const noVolts = (dir: Dir) => (dir > 0 ? maxVolts <= 0 : minVolts >= 0)
   const holdProps = (dir: Dir, onStart: () => void) => ({
-    disabled: !verifying || !supported,
+    disabled: !verifying || !supported || noVolts(dir),
     onPointerDown: (e: React.PointerEvent) => {
       e.currentTarget.setPointerCapture(e.pointerId)
       onStart()
@@ -939,56 +987,63 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         )}
       </div>
   )
+  // A slider for any voltage between its ends, like the Live tune card's Voltage tab. Its ends are what the drive
+  // buttons and the stick drive at.
   const driveSettings = (
       <div className="flex flex-col gap-1.5 text-sm">
-        <span className="flex justify-between text-xs uppercase tracking-wider text-muted-foreground">
-          <label htmlFor="drive-volts">Drive voltage (magnitude)</label>
-          <span className="font-mono normal-case tabular">
-            {driving !== null
-              ? `Applying ${formatVolts(appliedVolts)}`
-              : rampingDown
-                ? `Ramping down ${formatVolts(appliedVolts)} at ${rampRateNow} V/s`
-                : formatVolts(driveVolts)}
+        <span className="flex justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <span>Voltage</span>
+          <span className="font-mono normal-case tabular text-foreground">
+            {rampingDown
+              ? `Ramping down ${formatVolts(appliedVolts)} at ${rampRateNow}\u00a0V/s`
+              : `Applied ${formatVolts(appliedVolts)}`}
           </span>
         </span>
-        <input
-          id="drive-volts"
-          type="range"
-          className="accent-foreground"
-          min={minDriveVolts}
-          max={maxDriveVolts}
+        <Slider
+          aria-label="Voltage"
+          min={minVolts}
+          max={maxVolts}
           step={0.05}
-          value={Math.min(maxDriveVolts, Math.max(minDriveVolts, driveVolts))}
-          disabled={driving !== null}
-          onChange={(e) => setDriveVolts(Number(e.target.value))}
+          disabled={!verifying || !supported || (driving !== null && driveSource.current !== "slider")}
+          value={Math.min(maxVolts, Math.max(minVolts, sliderVolts))}
+          onValueChange={(raw) => slide(Math.round((Array.isArray(raw) ? raw[0] : raw) * 100) / 100)}
+          onValueCommitted={() => {
+            if (springBack && driveSource.current === "slider") releaseDrive()
+            if (springBack) {
+              sliderRef.current = 0
+              setSliderVolts(0)
+            }
+          }}
         />
-        <div className="flex items-center justify-between font-mono text-xs text-muted-foreground tabular">
+        <div className="flex items-center justify-between gap-2 font-mono text-xs text-muted-foreground tabular">
           <EditableBound
-            label="Minimum drive voltage"
-            value={minDriveVolts}
+            label="Minimum voltage"
+            value={minVolts}
             digits={2}
-            step={0.05}
+            step={0.1}
             format={formatVolts}
             onSubmit={(v) => {
-              const next = Math.max(MIN_DRIVE_VOLTS, v)
-              if (next >= maxDriveVolts) return `Minimum must be below ${formatVolts(maxDriveVolts)}.`
-              setMinDriveVolts(next)
-              if (driveVolts < next) setDriveVolts(next)
-              return next !== v ? `Raised to ${formatVolts(next)}; drive voltage cannot go lower.` : null
+              const next = Math.max(-HARD_LIMIT_VOLTS, Math.min(0, v))
+              if (next >= maxVolts) return `Minimum must be below ${formatVolts(maxVolts)}.`
+              setMinVolts(next)
+              return next !== v ? `Limited to ${formatVolts(next)}.` : null
             }}
           />
+          <label htmlFor="range-spring-back" className="flex items-center gap-2 font-sans">
+            <Switch id="range-spring-back" size="sm" checked={springBack} onCheckedChange={(v) => setSpringBack(v === true)} />
+            Back to 0{"\u00a0"}V on release
+          </label>
           <EditableBound
-            label="Maximum drive voltage"
-            value={maxDriveVolts}
+            label="Maximum voltage"
+            value={maxVolts}
             digits={2}
             step={0.1}
             format={formatVolts}
             align="end"
             onSubmit={(v) => {
-              const next = Math.min(HARD_LIMIT_VOLTS, v)
-              if (next <= minDriveVolts) return `Maximum must be above ${formatVolts(minDriveVolts)}.`
-              setMaxDriveVolts(next)
-              if (driveVolts > next) setDriveVolts(next)
+              const next = Math.min(HARD_LIMIT_VOLTS, Math.max(0, v))
+              if (next <= minVolts) return `Maximum must be above ${formatVolts(minVolts)}.`
+              setMaxVolts(next)
               return next !== v ? `Limited to ${formatVolts(next)}.` : null
             }}
           />
@@ -999,7 +1054,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   const releaseSetup = (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs uppercase tracking-wider text-muted-foreground" id="release-label">
-        When a drive button is released
+        When the voltage is let go
       </span>
       <div className="flex flex-wrap items-center gap-2">
         <Segmented
@@ -1033,7 +1088,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       {release === "ramp" && (
         <Hint summary="How the ramp works" className={verifying ? "hidden" : undefined}>
           <ul className="flex list-disc flex-col gap-1 ps-4">
-            <li>{`On release the voltage falls at ${rampDownRate} V/s: ${formatDuration(driveVolts / rampDownRate)} from ${formatVolts(driveVolts)}.`}</li>
+            <li>{`On release the voltage falls at ${rampDownRate} V/s: ${formatDuration(maxVolts / rampDownRate)} from ${formatVolts(maxVolts)}.`}</li>
             <li>The mechanism keeps moving while it ramps.</li>
             <li>{`While it still goes up, the rate rises by its last digit every ${LOOP_MS} ms (0.09, 0.1, 0.2), up to ${Math.max(MAX_RAMP_RATE_BOOST, rampDownRate)} V/s.`}</li>
             {kind === "arm" && <li>{`Below 0° there is no ramp: it goes straight to ${gravityVolts !== 0 ? "the gravity hold voltage" : "0 V"}.`}</li>}
@@ -1099,10 +1154,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
                   <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
-                  {`Hold: drive ${negLabel} (−${formatVolts(driveVolts)})`}
+                  {`Hold: drive ${negLabel} (${formatVolts(minVolts)})`}
                 </button>
                 <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
-                  {`Hold: drive ${posLabel} (+${formatVolts(driveVolts)})`}
+                  {`Hold: drive ${posLabel} (+${formatVolts(maxVolts)})`}
                   <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
                 </button>
               </div>
@@ -1111,22 +1166,22 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
                 <button
                   type="button"
                   {...holdProps(-1, () => beginDrive(-1, lowerValue))}
-                  disabled={!verifying || !supported || definedError !== null}
+                  disabled={!verifying || !supported || definedError !== null || noVolts(-1)}
                   className={holdClass}
                   data-active={driving === -1}
                 >
                   <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
                   {definedError ? "Hold: drive to lower end" : `Hold: drive to ${fmt(lowerValue)}`}
-                  <span className="font-mono text-xs opacity-70 tabular">{`−${formatVolts(driveVolts)}`}</span>
+                  <span className="font-mono text-xs opacity-70 tabular">{formatVolts(minVolts)}</span>
                 </button>
                 <button
                   type="button"
                   {...holdProps(1, () => beginDrive(1, upperValue))}
-                  disabled={!verifying || !supported || definedError !== null}
+                  disabled={!verifying || !supported || definedError !== null || noVolts(1)}
                   className={holdClass}
                   data-active={driving === 1}
                 >
-                  <span className="font-mono text-xs opacity-70 tabular">{`+${formatVolts(driveVolts)}`}</span>
+                  <span className="font-mono text-xs opacity-70 tabular">{`+${formatVolts(maxVolts)}`}</span>
                   {definedError ? "Hold: drive to upper end" : `Hold: drive to ${fmt(upperValue)}`}
                   <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
                 </button>

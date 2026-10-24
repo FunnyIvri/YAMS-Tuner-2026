@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useRef, useState } from "react"
-import { CircleCheck, CircleDashed, Play, SkipForward, TriangleAlert, Zap } from "lucide-react"
+import { CircleCheck, CircleDashed, Play, SkipForward, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -307,10 +307,6 @@ function CheckBody() {
           </p>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={zero}>
-              <Zap data-icon="inline-start" />
-              Set 0 V
-            </Button>
             <Button
               className="ms-auto"
               disabled={!passed}
@@ -370,7 +366,13 @@ function VoltageEntry({
     const next = Math.min(max, Math.max(min, v))
     onApply(next)
     setText(next.toString())
-    setNote(next !== v ? `Limited to ${format(next)}. Change the slider range to go further.` : `Holding ${format(next)}. Set 0 V or press Space to stop.`)
+    setNote(
+      next !== v
+        ? `Limited to ${format(next)}. Change the slider range to go further.`
+        : next === 0
+          ? `Set to ${format(0)}.`
+          : `Holding ${format(next)}. Type 0 or press Space to stop.`,
+    )
   }
 
   return (
