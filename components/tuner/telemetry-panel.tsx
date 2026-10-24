@@ -3,24 +3,29 @@
 import { useEffect, useRef, useState } from "react"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
 import { Panel, Readout } from "@/components/tuner/panel"
-import { axisReader, formatNumber, formatPosition, velocityUnit, yamsTopics } from "@/lib/yams/topics"
+import { WheelPicker } from "@/components/tuner/wheel-picker"
+import { axisReader, formatNumber, formatPosition, velocityUnit, wheelLabels, yamsTopics } from "@/lib/yams/topics"
 import { EMPTY, NBSP, num } from "@/lib/format"
 
 const WINDOW_MS = 10_000
 
 export function TelemetryPanel() {
-  const { mechanismName, axis, kind, stallCurrent, status } = useTuner()
+  // The readouts are a double flywheel's chosen wheel's; the chart shows every wheel.
+  const { wheel: name, axis, kind, stallCurrent, status } = useTuner()
   const { position, velocity, current } = useAxisValues()
-  const temp = useNtValue<number>(mechanismName ? yamsTopics(mechanismName).data.temperature : null)
-  const volts = useNtValue<number>(mechanismName ? yamsTopics(mechanismName).data.outputVoltage : null)
+  const temp = useNtValue<number>(name ? yamsTopics(name).data.temperature : null)
+  const volts = useNtValue<number>(name ? yamsTopics(name).data.outputVoltage : null)
   const amps = current === undefined ? undefined : Math.abs(current)
 
   return (
     <Panel
       title="Telemetry"
       className="short:h-full short:[&>div]:min-h-0 short:[&>div]:flex-1 short:[&>div]:gap-2 short:[&>div]:p-2.5 short:[&>header]:hidden"
-      locked={status !== "connected" || !mechanismName ? "Live position, setpoint and current appear here." : null}
+      locked={status !== "connected" || !name ? "Live position, setpoint and current appear here." : null}
     >
+      <div className="short:hidden">
+        <WheelPicker />
+      </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 short:grid-cols-4 short:gap-1.5">
         <Readout label="Position" value={kind === "flywheel" ? EMPTY : formatPosition(position, axis)} />
         <Readout label={`Velocity (${velocityUnit(axis)})`} value={formatNumber(velocity, axis === "linear" ? 3 : 0)} />
@@ -85,17 +90,20 @@ function cssVar(name: string) {
 }
 
 function Chart() {
-  const { nt, mechanismName, axis, kind, verified, stallCurrent } = useTuner()
+  const { nt, wheels, axis, kind, verified, stallCurrent } = useTuner()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const config = useRef({ nt, mechanismName, axis, kind, verified, stallCurrent })
-  config.current = { nt, mechanismName, axis, kind, verified, stallCurrent }
+  const config = useRef({ nt, wheels, axis, kind, verified, stallCurrent })
+  config.current = { nt, wheels, axis, kind, verified, stallCurrent }
+  const labels = wheelLabels(wheels)
+  const double = wheels.length > 1
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
-    const samples: { t: number; measured?: number; setpoint?: number; current?: number }[] = []
+    // One measured value and setpoint per wheel: a double flywheel has two.
+    const samples: { t: number; measured: (number | undefined)[]; setpoint: (number | undefined)[]; current?: number }[] = []
     // Read again when the theme changes, so the chart follows it.
     const readColors = () => ({
       fg: cssVar("--foreground"),
@@ -125,22 +133,24 @@ function Chart() {
 
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw)
-      const { nt, mechanismName, axis, kind, verified, stallCurrent } = config.current
-      if (mechanismName && now - lastSample >= 20) {
+      const { nt, wheels, axis, kind, verified, stallCurrent } = config.current
+      if (wheels.length > 0 && now - lastSample >= 20) {
         lastSample = now
-        const reader = axisReader(nt, mechanismName, axis)
-        const t = yamsTopics(mechanismName)
         const flywheel = kind === "flywheel"
-        const sp = nt.getNumber(flywheel ? t.tuning.setpointVelocity : t.tuning.setpointPosition)
-        samples.push({
-          t: now,
-          measured: flywheel ? reader.velocity() : reader.position(),
-          setpoint: sp === undefined ? undefined : flywheel && Math.abs(sp) < 0.01 ? 0 : sp,
-          current: (() => {
-            const a = nt.getNumber(t.data.statorCurrent)
-            return a === undefined ? undefined : Math.abs(a)
-          })(),
-        })
+        const measured: (number | undefined)[] = []
+        const setpoint: (number | undefined)[] = []
+        // The current bars show the wheel drawing the most: each motor trips on its own.
+        let current: number | undefined
+        for (const w of wheels) {
+          const reader = axisReader(nt, w, axis)
+          const t = yamsTopics(w)
+          const sp = nt.getNumber(flywheel ? t.tuning.setpointVelocity : t.tuning.setpointPosition)
+          measured.push(flywheel ? reader.velocity() : reader.position())
+          setpoint.push(sp === undefined ? undefined : flywheel && Math.abs(sp) < 0.01 ? 0 : sp)
+          const a = nt.getNumber(t.data.statorCurrent)
+          if (a !== undefined) current = Math.max(current ?? 0, Math.abs(a))
+        }
+        samples.push({ t: now, measured, setpoint, current })
       }
       while (samples.length && now - samples[0].t > WINDOW_MS) samples.shift()
 
@@ -154,8 +164,8 @@ function Chart() {
 
       const bounds: number[] = []
       for (const s of samples) {
-        if (s.measured !== undefined) bounds.push(s.measured)
-        if (s.setpoint !== undefined) bounds.push(s.setpoint)
+        for (const v of s.measured) if (v !== undefined) bounds.push(v)
+        for (const v of s.setpoint) if (v !== undefined) bounds.push(v)
       }
       const showRange = kind !== "flywheel" && verified.lower !== null && verified.upper !== null
       if (showRange) bounds.push(verified.lower as number, verified.upper as number)
@@ -227,13 +237,15 @@ function Chart() {
         }
         ctx.restore()
       }
-      const line = (key: "measured" | "setpoint", color: string, width: number) => {
+      // A second wheel's lines are dashed, so the wheels never differ by colour alone.
+      const line = (key: "measured" | "setpoint", index: number, color: string, width: number) => {
         ctx.strokeStyle = color
         ctx.lineWidth = width
+        ctx.setLineDash(index === 0 ? [] : [6, 4])
         ctx.beginPath()
         let started = false
         for (const s of samples) {
-          const v = s[key]
+          const v = s[key][index]
           if (v === undefined) {
             started = false
             continue
@@ -244,8 +256,9 @@ function Chart() {
         }
         ctx.stroke()
       }
-      line("setpoint", colors.sp, 1.5)
-      line("measured", colors.fg, 2)
+      for (let i = 0; i < wheels.length; i++) line("setpoint", i, colors.sp, 1.5)
+      for (let i = 0; i < wheels.length; i++) line("measured", i, colors.fg, 2)
+      ctx.setLineDash([])
     }
     raf = requestAnimationFrame(draw)
     return () => {
@@ -261,7 +274,11 @@ function Chart() {
         ref={canvasRef}
         className="h-56 w-full rounded-md border border-border bg-background short:h-0 short:min-h-16 short:flex-1"
         role="img"
-        aria-label="Measured value, setpoint and stator current over the last 10 seconds"
+        aria-label={
+          double
+            ? `Each wheel’s measured speed and setpoint, ${wheels.map((w, i) => `${labels[w]} ${i === 0 ? "solid" : "dashed"}`).join(", ")}, and the higher stator current, over the last 10 seconds`
+            : "Measured value, setpoint and stator current over the last 10 seconds"
+        }
       />
       <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground short:gap-x-2.5">
         <span className="flex items-center gap-1.5">
@@ -272,9 +289,16 @@ function Chart() {
           <span aria-hidden className="h-0.5 w-4 bg-setpoint" />
           Setpoint
         </span>
+        {double &&
+          wheels.map((w, i) => (
+            <span key={w} className="flex items-center gap-1.5">
+              <span aria-hidden className={i === 0 ? "w-4 border-t-2 border-foreground" : "w-4 border-t-2 border-dashed border-foreground"} />
+              {labels[w]}
+            </span>
+          ))}
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="h-2.5 w-4 bg-hazard/40" />
-          Stator current (right axis)
+          {double ? "Higher stator current (right axis)" : "Stator current (right axis)"}
         </span>
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="w-4 border-t border-dotted border-destructive" />

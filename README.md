@@ -13,6 +13,7 @@ A browser tool for safely live tuning [YAMS](https://github.com/Yet-Another-Soft
 - Guided safety checklist and voltage/inversion check before anything moves.
 - Range-of-motion verification that jogs the mechanism slowly toward each soft limit and aborts on inversion, stalls or overshoot.
 - Setpoint control, a setpoint alternator, and live editing of gains and feedforward.
+- Double flywheels: two flywheels in one subsystem, sharing its Live Tuning command, tuned together. Each wheel gets its own setpoint and gains, and the safety checks cover both wheels.
 - Live telemetry: position, velocity, setpoint, voltage, current and temperature.
 - A stop bar that is always visible.
 
@@ -21,7 +22,7 @@ A browser tool for safely live tuning [YAMS](https://github.com/Yet-Another-Soft
 1. On the robot, publish YAMS telemetry for your mechanism and register its Live Tuning command with `mechanism.liveTune()`.
 2. Open the live site (or run it locally, see below).
 3. Pick **Robot** and enter your team number, or pick **Sim** for the simulator.
-4. Choose the mechanism, its Live Tuning command and its type, then follow the checklist and range verification before tuning.
+4. Choose the mechanism, its Live Tuning command and its type, then follow the checklist and range verification before tuning. For a double flywheel, choose the type **Flywheel** and pick the other wheel as the **Second flywheel**. YAMS's `double_flywheel` example is a robot to try it on.
 
 The page is served over HTTPS but talks to the robot with `ws://`. Chromium based browsers allow this for local network addresses, and may show a prompt asking for permission to access devices on your local network. If the connection fails, try Chrome or Edge, or run the tuner locally.
 
@@ -47,7 +48,12 @@ On an iPad in landscape, the two columns stay side by side, with the stop button
 
 ## Demo mode
 
-Pick **Demo (no robot)** and press **Start demo**, or open the site with `?demo` (for example https://tuning.yassrobotics.com/?demo), to try the tuner without a robot or a simulation. A simulated robot runs in the page with four YAMS mechanisms: an elevator, an arm, a turret with no motion profile, and a two-motor shooter flywheel. Their physics come from [YAMG](https://github.com/Yet-Another-Software-Suite/yamg)'s simulation: NEO motors with stator and supply current limits, gravity, hard stops and battery sag.
+Pick **Demo (no robot)** and press **Start demo**, or open the site with `?demo` (for example https://tuning.yassrobotics.com/?demo), to try the tuner without a robot or a simulation. A simulated robot runs in the page with YAMS mechanisms:
+- an elevator;
+- an arm;
+- a turret with no motion profile;
+- a two-motor shooter flywheel;
+- a double flywheel, named as in YAMS's `double_flywheel` example: `LowerFlyWheel` and `UpperFlyWheel`, sharing the `DoubleFlyWheelSubsystem` Live Tuning command. Their physics come from [YAMG](https://github.com/Yet-Another-Software-Suite/yamg)'s simulation: NEO motors with stator and supply current limits, gravity, hard stops and battery sag.
 
 The demo bar under the header stands in for the Driver Station: pick the mode, enable or disable the robot, and reset it. It can also break the robot on purpose, so the safety checks can be tried:
 

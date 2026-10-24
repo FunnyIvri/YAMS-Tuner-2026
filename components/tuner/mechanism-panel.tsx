@@ -16,6 +16,8 @@ export function MechanismPanel({ onContinue }: { onContinue: () => void }) {
     setMechanismName,
     commandName,
     setCommandName,
+    secondWheel,
+    setSecondWheel,
     kind,
     setKind,
     continuous,
@@ -38,9 +40,14 @@ export function MechanismPanel({ onContinue }: { onContinue: () => void }) {
     }
     setMechanismName(name)
     setKind(guessKind(nt, name))
-    const match = commands.find((c) => c === name) ?? commands.find((c) => name.startsWith(c) || c.startsWith(name))
+    const matches = (m: string, c: string) => m === c || m.startsWith(c) || c.startsWith(m)
+    const match = commands.find((c) => c === name) ?? commands.find((c) => matches(name, c))
+    // Otherwise the one command no mechanism is named after, if there is just one: a subsystem whose mechanisms
+    // are named apart from it, such as a double flywheel's two wheels.
+    const unclaimed = commands.filter((c) => !mechanisms.some((m) => matches(m, c)))
     if (match) setCommandName(match)
     else if (commands.length === 1) setCommandName(commands[0])
+    else if (unclaimed.length === 1) setCommandName(unclaimed[0])
   }
 
   return (
@@ -93,6 +100,29 @@ export function MechanismPanel({ onContinue }: { onContinue: () => void }) {
             ))}
           </NativeSelect>
         </Field>
+        {kind === "flywheel" && (
+          <Field
+            label="Second flywheel"
+            htmlFor="second-wheel"
+            hint="For a double flywheel: another flywheel in the same subsystem, sharing its Live Tuning command. Both wheels are tuned together."
+          >
+            <NativeSelect
+              id="second-wheel"
+              value={secondWheel ?? ""}
+              disabled={busy || !mechanismName}
+              onChange={(e) => setSecondWheel(e.target.value || null)}
+            >
+              <option value="">None</option>
+              {mechanisms
+                .filter((m) => m !== mechanismName)
+                .map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+            </NativeSelect>
+          </Field>
+        )}
         {kind === "pivot" && (
           <Field label="Rotation" hint="Only choose continuous if the pivot can spin freely forever without wrapping wires.">
             <label className="flex h-9 items-center gap-2 text-sm">

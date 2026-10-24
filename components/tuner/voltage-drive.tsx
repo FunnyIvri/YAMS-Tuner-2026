@@ -97,11 +97,12 @@ function holdVolts(kind: string, gravity: number, pos: number | undefined) {
  * hold voltage) between presses. The settings are in the Settings card's Voltage tab.
  */
 export function VoltageDrive() {
-  const { nt, mechanismName, axis, kind, session, starting, startLiveTuning, stop, verified, positional, tuningUnlocked } =
+  // A double flywheel drives the wheel chosen with the wheel picker.
+  const { nt, wheel: name, axis, kind, session, starting, startLiveTuning, stop, verified, positional, tuningUnlocked } =
     useTuner()
   const { settings, update } = useLiveTune()
   const { position, lower: softLower, upper: softUpper } = useAxisValues()
-  const topics = mechanismName ? yamsTopics(mechanismName) : null
+  const topics = name ? yamsTopics(name) : null
   // Subscribing re-renders when the topic is announced by a YAMS version that supports it.
   useNtValue<boolean>(topics?.tuning.voltageEnabled ?? null)
   const supported = !!topics && nt.isAnnounced(topics.tuning.voltageEnabled) && nt.isAnnounced(topics.tuning.voltageSetpoint)
@@ -151,19 +152,19 @@ export function VoltageDrive() {
   /** During Live Tuning: leaves voltage control and hands back to the closed loop where the mechanism is now. */
   const handBack = useCallback(() => {
     setHeld(false)
-    if (!mechanismName) return
-    const t = yamsTopics(mechanismName)
+    if (!name) return
+    const t = yamsTopics(name)
     // Seed the closed loop before releasing voltage, so it holds where the mechanism is instead of jumping back.
     if (flywheel) {
       if (heldVelocity.current !== null) nt.set(t.tuning.setpointVelocity, heldVelocity.current)
     } else {
-      const pos = axisReader(nt, mechanismName, axis).position()
+      const pos = axisReader(nt, name, axis).position()
       if (pos !== undefined) nt.set(t.tuning.setpointPosition, pos)
     }
     nt.set(t.tuning.voltageSetpoint, 0)
     nt.set(t.tuning.voltageEnabled, false)
     heldVelocity.current = null
-  }, [nt, mechanismName, axis, flywheel])
+  }, [nt, name, axis, flywheel])
 
   const endDrive = useCallback(() => {
     if (timer.current !== null) {
@@ -176,9 +177,9 @@ export function VoltageDrive() {
     setSliderVolts(0)
     sentVolts.current = 0
     command.current = 0
-    if (!mechanismName) return
-    const t = yamsTopics(mechanismName)
-    const pos = axisReader(nt, mechanismName, axis).position()
+    if (!name) return
+    const t = yamsTopics(name)
+    const pos = axisReader(nt, name, axis).position()
     if (sessionRef.current === "tune" && !settingsRef.current.stayInVoltage) {
       handBack()
       return
@@ -194,7 +195,7 @@ export function VoltageDrive() {
       return
     }
     heldVelocity.current = null
-  }, [nt, mechanismName, axis, holdAt, handBack])
+  }, [nt, name, axis, holdAt, handBack])
 
   useEffect(() => {
     if (!active && timer.current !== null) endDrive()
@@ -222,9 +223,9 @@ export function VoltageDrive() {
   // Between presses in voltage mode, keep sending the gravity hold voltage: an arm's changes with its angle.
   useEffect(() => {
     const between = session === "jog" || (session === "tune" && held)
-    if (!between || settings.gravityVolts === 0 || !mechanismName) return
-    const reader = axisReader(nt, mechanismName, axis)
-    const t = yamsTopics(mechanismName)
+    if (!between || settings.gravityVolts === 0 || !name) return
+    const reader = axisReader(nt, name, axis)
+    const t = yamsTopics(name)
     let last: number | null = null
     const id = window.setInterval(() => {
       if (timer.current !== null || (sessionRef.current !== "jog" && sessionRef.current !== "tune")) {
@@ -238,7 +239,7 @@ export function VoltageDrive() {
       nt.set(t.tuning.voltageEnabled, true)
     }, LOOP_MS)
     return () => clearInterval(id)
-  }, [session, held, settings.gravityVolts, mechanismName, nt, axis, holdAt])
+  }, [session, held, settings.gravityVolts, name, nt, axis, holdAt])
 
   const boundsRef = useRef(bounds)
   boundsRef.current = bounds
@@ -258,9 +259,9 @@ export function VoltageDrive() {
    * moved by hand). While a drive runs, a new voltage just replaces the old one. It stops at the ends of the range.
    */
   const startDrive = (volts: number, fromButton: boolean) => {
-    if (!active || !mechanismName || !supported || volts === 0) return
-    const reader = axisReader(nt, mechanismName, axis)
-    const t = yamsTopics(mechanismName)
+    if (!active || !name || !supported || volts === 0) return
+    const reader = axisReader(nt, name, axis)
+    const t = yamsTopics(name)
     const dir: Dir = volts > 0 ? 1 : -1
     const startPos = reader.position()
     setNote(null)
@@ -336,13 +337,13 @@ export function VoltageDrive() {
   const releaseDrive = () => {
     if (timer.current === null || rampingDown) return
     const { release, rampDownRate } = settingsRef.current
-    if (release === "cut" || !mechanismName) {
+    if (release === "cut" || !name) {
       endDrive()
       return
     }
     clearInterval(timer.current)
-    const reader = axisReader(nt, mechanismName, axis)
-    const t = yamsTopics(mechanismName)
+    const reader = axisReader(nt, name, axis)
+    const t = yamsTopics(name)
     const params = jogParams(axis)
     const dir = (Math.sign(command.current) || null) as Dir | null
     let out = sentVolts.current

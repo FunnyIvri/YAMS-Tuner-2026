@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { SetpointAlternator } from "@/components/tuner/setpoint-alternator"
-import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
+import { useAxisValues, useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
 import { CardTabPanel, CardTabs, LiveRegion, Notice, Panel } from "@/components/tuner/panel"
 import { VoltageDrive, useLiveTune, type LiveTab } from "@/components/tuner/voltage-drive"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
-import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
+import { WheelPicker } from "@/components/tuner/wheel-picker"
+import { formatPosition, positionUnit, wheelLabels, yamsTopics } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 import { EMPTY, num } from "@/lib/format"
 import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep, overshootTolerance } from "@/lib/yams/safety"
@@ -38,7 +39,7 @@ const TABS = [
 ] as const satisfies readonly (readonly [LiveTab, string])[]
 
 export function SetpointPanel() {
-  const { kind } = useTuner()
+  const { kind, wheels, wheel } = useTuner()
   const { tab, setTab } = useLiveTune()
   return (
     <Panel
@@ -49,7 +50,21 @@ export function SetpointPanel() {
     >
       <CardTabs label="Setpoints or voltage" tabs={TABS} value={tab} onChange={setTab} />
       <CardTabPanel label="Setpoints or voltage" value={tab}>
-        {tab === "voltage" ? <VoltageDrive /> : kind === "flywheel" ? <VelocityControl /> : <PositionControl />}
+        {tab === "voltage" ? (
+          <>
+            <WheelPicker />
+            {/* A new wheel starts a new drive: the old wheel goes back to its closed loop. */}
+            <VoltageDrive key={wheel ?? ""} />
+          </>
+        ) : kind === "flywheel" ? (
+          wheels.length > 1 ? (
+            <DoubleVelocityControl />
+          ) : (
+            <VelocityControl />
+          )
+        ) : (
+          <PositionControl />
+        )}
       </CardTabPanel>
     </Panel>
   )
@@ -278,6 +293,199 @@ function PositionControl() {
           </div>
         </div>
       )}
+      <LiveRegion>
+        {error && (
+          <Notice tone="warn" live={false}>
+            {error}
+          </Notice>
+        )}
+      </LiveRegion>
+    </>
+  )
+}
+
+/** The flywheel slider's ends, which start at the safety default and can be moved past it, with a warning. */
+function useFlywheelBounds() {
+  const { flywheelRange, setFlywheelRange } = useTuner()
+  const { min: lo, max: hi } = flywheelRange
+  return {
+    set: (min: number, max: number, edited: number) => {
+      setFlywheelRange({ min, max })
+      return Math.abs(edited) > DEFAULT_FLYWHEEL_MAX_RPM
+        ? `Warning: ${Math.round(edited)} RPM is outside the ±${DEFAULT_FLYWHEEL_MAX_RPM} RPM safety limit.`
+        : null
+    },
+    reset: () => setFlywheelRange(DEFAULT_FLYWHEEL_RANGE),
+    changed: lo !== DEFAULT_FLYWHEEL_RANGE.min || hi !== DEFAULT_FLYWHEEL_RANGE.max,
+  }
+}
+
+/** YAMS ignores a velocity setpoint of exactly 0, so idle is a negligible one. */
+const wireVelocity = (rpm: number) => (rpm === 0 ? FLYWHEEL_IDLE_VELOCITY : rpm)
+const shownVelocity = (setpoint: number | undefined) =>
+  typeof setpoint === "number" ? (Math.abs(setpoint) < 0.01 ? 0 : setpoint) : undefined
+
+/** One wheel's measured speed and setpoint, in RPM. */
+function WheelSpeed({ name, label }: { name: string; label: string }) {
+  const { velocity } = useAxisValues(name)
+  const setpoint = shownVelocity(useNtValue<number>(yamsTopics(name).tuning.setpointVelocity))
+  return (
+    <div className="flex min-w-0 flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 font-mono tabular">
+      <p className="truncate text-xs font-medium uppercase tracking-wider text-foreground" title={name}>
+        {label}
+      </p>
+      <p className="flex items-baseline justify-between gap-2">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground">Measured</span>
+        <span className="text-xl font-medium">{velocity === undefined ? EMPTY : num(velocity, 0)}</span>
+      </p>
+      <p className="flex items-baseline justify-between gap-2">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground">Setpoint</span>
+        <span className="text-xl font-medium">{setpoint === undefined ? EMPTY : num(setpoint, 0)}</span>
+      </p>
+    </div>
+  )
+}
+
+/**
+ * A double flywheel's setpoints: a speed for each wheel, sent together, so a shot's spin can be tuned. Each wheel's
+ * slider sets only that wheel, unless both are set to the same speed.
+ */
+function DoubleVelocityControl() {
+  const { nt, wheels, session, flywheelRange } = useTuner()
+  const { min: lo, max: hi } = flywheelRange
+  const bounds = useFlywheelBounds()
+  const labels = wheelLabels(wheels)
+  const active = session === "tune"
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [same, setSame] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sameId = useId()
+  // An empty box shows its wheel's setpoint now, so this follows it.
+  useNtVersion()
+
+  const clampRpm = (v: number) => Math.max(lo, Math.min(hi, v))
+  const setpointOf = (w: string) => shownVelocity(nt.getNumber(yamsTopics(w).tuning.setpointVelocity))
+
+  /** Sends a speed to each wheel given; the others keep theirs. Idle always gets through, whatever the range. */
+  const send = (values: Record<string, number>) => {
+    setError(null)
+    const missing = Object.keys(values).find((w) => !Number.isFinite(values[w]))
+    if (missing) return setError(`Enter a number for ${labels[missing]}.`)
+    let limited = false
+    const next = { ...drafts }
+    for (const [w, raw] of Object.entries(values)) {
+      const value = raw === 0 ? 0 : clampRpm(raw)
+      if (value !== raw) limited = true
+      nt.set(yamsTopics(w).tuning.setpointVelocity, wireVelocity(value))
+      next[w] = String(Math.round(value))
+    }
+    setDrafts(next)
+    if (limited) setError(`Limited to the slider’s range, ${lo} to ${hi} RPM.`)
+  }
+  const sendBoth = (rpm: number) => send(Object.fromEntries(wheels.map((w) => [w, rpm])))
+  const edit = (w: string, text: string) =>
+    setDrafts((d) => (same ? Object.fromEntries(wheels.map((x) => [x, text])) : { ...d, [w]: text }))
+  /** What a wheel's box would send: what was typed, or its setpoint now. */
+  const draftOf = (w: string) => drafts[w] ?? (setpointOf(w) === undefined ? "" : String(Math.round(setpointOf(w) as number)))
+
+  const top = Math.abs(hi) >= Math.abs(lo) ? hi : lo
+  const steps = [0.25, 0.5, 0.75, 1].map((f) => Math.round(clampRpm(top * f)))
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        {wheels.map((w) => (
+          <WheelSpeed key={w} name={w} label={labels[w]} />
+        ))}
+      </div>
+      <SessionButton />
+      <fieldset disabled={!active} className="flex flex-col gap-3 disabled:opacity-50">
+        <legend className="sr-only">Velocity setpoints</legend>
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            send(Object.fromEntries(wheels.map((w) => [w, draftOf(w) === "" ? Number.NaN : Number(draftOf(w))])))
+          }}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            {wheels.map((w) => (
+              <div key={w} className="flex min-w-0 flex-col gap-1">
+                <label htmlFor={`vel-${w}`} className="truncate text-xs uppercase tracking-wider text-muted-foreground" title={w}>
+                  {labels[w]}
+                  <span className="sr-only"> (RPM)</span>
+                </label>
+                <Input
+                  id={`vel-${w}`}
+                  type="number"
+                  step={50}
+                  className="font-mono"
+                  placeholder="RPM"
+                  value={draftOf(w)}
+                  onChange={(e) => edit(w, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit">
+              <Send data-icon="inline-start" />
+              Send both
+            </Button>
+            <label htmlFor={sameId} className="flex items-center gap-2 text-sm">
+              <Switch id={sameId} size="sm" checked={same} onCheckedChange={setSame} />
+              Same speed for both
+            </label>
+          </div>
+        </form>
+        {wheels.map((w) => {
+          const value = Number(draftOf(w))
+          return (
+            <div key={w} className="flex flex-col gap-1">
+              <span className="truncate text-xs uppercase tracking-wider text-muted-foreground" title={w}>
+                {labels[w]}
+              </span>
+              <SliderRow
+                label={`${labels[w]} velocity setpoint slider (RPM)`}
+                min={lo}
+                max={hi}
+                bounds={bounds}
+                digits={0}
+                step={10}
+                value={clampRpm(Number.isFinite(value) ? value : 0)}
+                format={(v) => `${Math.round(v)} RPM`}
+                onChange={(v) => edit(w, String(Math.round(v)))}
+                onCommit={(v) => (same ? sendBoth(v) : send({ [w]: v }))}
+              />
+            </div>
+          )
+        })}
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {`Send both sets each wheel to its box. A slider sets only its wheel, or both with Same speed for both on. Setpoints are limited to the sliders’ range, which starts at the ±${DEFAULT_FLYWHEEL_MAX_RPM} RPM safety default. Select either end to change it.`}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => sendBoth(0)}>
+            Idle both (0)
+          </Button>
+          {steps.map((s) => (
+            <Button key={s} size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => sendBoth(s)}>
+              {`Both ${s} RPM`}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
+      <SetpointAlternator
+        id="vel-alt"
+        active={active}
+        unit="RPM"
+        step={50}
+        defaultA={Math.round(clampRpm(top * 0.25))}
+        defaultB={Math.round(clampRpm(top * 0.75))}
+        clamp={clampRpm}
+        write={(v) => {
+          for (const w of wheels) nt.set(yamsTopics(w).tuning.setpointVelocity, wireVelocity(v))
+        }}
+      />
       <LiveRegion>
         {error && (
           <Notice tone="warn" live={false}>

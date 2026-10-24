@@ -7,7 +7,9 @@ import { CardTabPanel, CardTabs, Panel } from "@/components/tuner/panel"
 import { CurrentTripField } from "@/components/tuner/safety-checklist"
 import { useValueHistory } from "@/components/tuner/value-history"
 import { VoltageSettingsPanel, useLiveTune } from "@/components/tuner/voltage-drive"
-import { GAIN_DEFS, axisReader, formatPosition, positionUnit, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
+import { WheelPicker } from "@/components/tuner/wheel-picker"
+import { Button } from "@/components/ui/button"
+import { GAIN_DEFS, axisReader, formatPosition, positionUnit, profileUnit, wheelLabels, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 
 const GAIN_GROUPS: { key: GainDef["group"]; label: string }[] = [
@@ -21,7 +23,8 @@ type Tab = "gains" | "limits" | "tuner" | "voltage"
 const ROBOT_TABS: Tab[] = ["gains", "limits"]
 
 export function GainsPanel() {
-  const { nt, mechanismName, status, kind, axis, positional, requiresRangeVerification } = useTuner()
+  // A double flywheel's gains are each wheel's own: these are the chosen wheel's.
+  const { nt, wheel: name, wheels, status, kind, axis, positional, requiresRangeVerification } = useTuner()
   useNtVersion()
   const live = useLiveTune()
   // While the Live tune card drives with voltage, a Voltage tab holds the drive's settings, and opens when it appears.
@@ -39,9 +42,9 @@ export function GainsPanel() {
     ["tuner", "Tuner"],
     ...(voltageTab ? ([["voltage", "Voltage"]] as [Tab, string][]) : []),
   ]
-  const prefix = mechanismName ? yamsTopics(mechanismName).tuningPrefix : ""
-  const available = mechanismName ? GAIN_DEFS.filter((g) => nt.isAnnounced(prefix + g.path)) : []
-  const reader = mechanismName ? axisReader(nt, mechanismName, axis) : null
+  const prefix = name ? yamsTopics(name).tuningPrefix : ""
+  const available = name ? GAIN_DEFS.filter((g) => nt.isAnnounced(prefix + g.path)) : []
+  const reader = name ? axisReader(nt, name, axis) : null
   const softLimits =
     positional && reader && nt.isAnnounced(reader.lowerLimitTopic) && nt.isAnnounced(reader.upperLimitTopic) ? reader : null
 
@@ -54,7 +57,7 @@ export function GainsPanel() {
       <GainGroup key={key} label={label}>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {defs.map((g, i) => (
-            <GainInput key={`${g.key}|${kind}|${axis}`} def={g} topic={prefix + g.path} unit={units[i]} />
+            <GainInput key={`${name}|${g.key}|${kind}|${axis}`} def={g} topic={prefix + g.path} unit={units[i]} />
           ))}
         </div>
         {converted && (
@@ -71,8 +74,9 @@ export function GainsPanel() {
     <Panel
       title="Settings"
       description="Gains and Limits are the robot’s own values. Tuner and Voltage only change this tuner. Changes apply when you press Enter or click away; Esc cancels."
-      locked={status !== "connected" || !mechanismName ? "Choose a mechanism to edit its gains." : null}
+      locked={status !== "connected" || !name ? "Choose a mechanism to edit its gains." : null}
     >
+      <WheelPicker />
       <CardTabs label="Robot or tuner settings" tabs={tabs} value={tab} onChange={setTab} />
       <CardTabPanel label="Robot or tuner settings" value={tab}>
         <p className="rounded-sm border-s-2 border-primary px-2 py-1 text-xs leading-relaxed text-foreground">
@@ -86,7 +90,10 @@ export function GainsPanel() {
           <VoltageSettingsPanel />
         ) : tab === "gains" ? (
           gains.length > 0 ? (
-            gains
+            <>
+              {gains}
+              {name && wheels.length > 1 && <CopyGains from={name} />}
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">This mechanism publishes no tunable gains.</p>
           )
@@ -107,6 +114,40 @@ export function GainsPanel() {
         )}
       </CardTabPanel>
     </Panel>
+  )
+}
+
+/** Copies a double flywheel wheel's gains (feedback, feedforward and profile) to its other wheel, for wheels that are alike. */
+function CopyGains({ from }: { from: string }) {
+  const { nt, wheels } = useTuner()
+  const [note, setNote] = useState<string | null>(null)
+  const labels = wheelLabels(wheels)
+  const others = wheels.filter((w) => w !== from)
+  const copy = () => {
+    const src = yamsTopics(from).tuningPrefix
+    const copied = new Set<string>()
+    for (const w of others) {
+      const dst = yamsTopics(w).tuningPrefix
+      for (const g of GAIN_DEFS) {
+        if (!GAIN_GROUPS.some((group) => group.key === g.group)) continue
+        const v = nt.getNumber(src + g.path)
+        if (v === undefined || !nt.isAnnounced(dst + g.path)) continue
+        nt.set(dst + g.path, v)
+        copied.add(g.label)
+      }
+    }
+    const to = others.map((w) => labels[w]).join(" and ")
+    setNote(copied.size > 0 ? `Copied ${[...copied].join(", ")} to ${to}.` : `${to} has none of these gains to set.`)
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Button variant="outline" className="self-start" onClick={copy}>
+        {`Copy these gains to ${others.map((w) => labels[w]).join(" and ")}`}
+      </Button>
+      <p role="status" className="text-xs leading-relaxed text-muted-foreground">
+        {note ?? "For wheels that are alike. The current limits and ramp rate are not copied."}
+      </p>
+    </div>
   )
 }
 

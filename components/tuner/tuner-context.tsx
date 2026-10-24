@@ -87,6 +87,17 @@ interface TunerApi {
   setMechanismName: (name: string | null) => void
   commandName: string | null
   setCommandName: (name: string | null) => void
+  /**
+   * A flywheel's second wheel, for a double flywheel: another flywheel's telemetry name in the same subsystem, sharing
+   * its Live Tuning command. Starting, stopping and the safety checks cover both wheels.
+   */
+  secondWheel: string | null
+  setSecondWheel: (name: string | null) => void
+  /** Every wheel being tuned: the mechanism, then a double flywheel's second wheel. Empty with no mechanism. */
+  wheels: string[]
+  /** The wheel the per-wheel controls (gains, voltage, the inversion check) work on. The mechanism unless a double flywheel's second wheel is chosen. */
+  wheel: string | null
+  setWheel: (name: string) => void
   kind: MechanismKind
   setKind: (kind: MechanismKind) => void
   continuous: boolean
@@ -174,6 +185,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const [team, setTeamState] = useState("")
   const [mechanismName, setMechanismNameState] = useState<string | null>(null)
   const [commandName, setCommandName] = useState<string | null>(null)
+  const [secondWheel, setSecondWheelState] = useState<string | null>(null)
+  const [chosenWheel, setWheel] = useState<string | null>(null)
   const [kind, setKindState] = useState<MechanismKind>("arm")
   const [continuous, setContinuousState] = useState(false)
   const [verified, setVerified] = useState<VerifiedRange>({ lower: null, upper: null })
@@ -201,6 +214,13 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     [nt, mechanismName, version],
   )
 
+  const wheels = useMemo(
+    () =>
+      !mechanismName ? [] : kind === "flywheel" && secondWheel && secondWheel !== mechanismName ? [mechanismName, secondWheel] : [mechanismName],
+    [mechanismName, kind, secondWheel],
+  )
+  const wheel = chosenWheel !== null && wheels.includes(chosenWheel) ? chosenWheel : mechanismName
+
   const isSimulation = !!host && isLoopbackHost(host)
   const positional = needsRangeVerification(kind, continuous)
   const requiresRangeVerification = positional
@@ -221,6 +241,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
 
   const liveValues = {
     mechanismName,
+    wheels,
     commandName,
     kind,
     axis,
@@ -244,7 +265,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
 
   const stop = useCallback(
     (reason = "Stopped by operator", fault = false, cause?: StopEvent["cause"]) => {
-      const { mechanismName: name, commandName: cmd, kind: k, axis: ax, session: was, verifyHold: hold } = live.current
+      const { mechanismName: name, wheels: all, commandName: cmd, kind: k, axis: ax, session: was, verifyHold: hold } = live.current
       stopGeneration.current++
       setSession(null)
       setLastStop({ reason, at: Date.now(), fault, cause })
@@ -257,20 +278,29 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         setTimeout(() => releaseVoltage(nt, name), 100)
         return
       }
-      // Open-loop voltage is the most dangerous output, so it is always released first.
-      releaseVoltage(nt, name)
+      // Open-loop voltage is the most dangerous output, so it is always released first, on every wheel.
+      for (const w of all) releaseVoltage(nt, w)
       const t = yamsTopics(name)
       const reader = axisReader(nt, name, ax)
       const cancel = () => {
         if (cmd) nt.set(liveTuningCommandTopic(cmd), false)
       }
       if (k === "flywheel") {
-        // Command ~0 velocity and let it spin down under closed loop before handing the subsystem back.
-        nt.set(t.tuning.setpointVelocity, FLYWHEEL_IDLE_VELOCITY)
+        // Command ~0 velocity and let every wheel spin down under closed loop before handing the subsystem back.
+        for (const w of all) nt.set(yamsTopics(w).tuning.setpointVelocity, FLYWHEEL_IDLE_VELOCITY)
+        const readers = all.map((w) => axisReader(nt, w, ax))
         const started = Date.now()
         const poll = setInterval(() => {
-          const v = reader.velocity()
-          if (v === undefined || Math.abs(v) < 60 || Date.now() - started > 4000 || nt.getStatus() !== "connected") {
+          // Started again while spinning down, say to check a double flywheel's other wheel: that start owns the command now.
+          if (startingRef.current || live.current.session !== null) {
+            clearInterval(poll)
+            return
+          }
+          const slow = readers.every((r) => {
+            const v = r.velocity()
+            return v === undefined || Math.abs(v) < 60
+          })
+          if (slow || Date.now() - started > 4000 || nt.getStatus() !== "connected") {
             clearInterval(poll)
             cancel()
           }
@@ -287,7 +317,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
 
   const startLiveTuning = useCallback(
     async (purpose: SessionPurpose): Promise<string | null> => {
-      const { mechanismName: name, commandName: cmd, kind: k, axis: ax } = live.current
+      const { mechanismName: name, wheels: all, commandName: cmd, kind: k, axis: ax } = live.current
       if (nt.getStatus() !== "connected") return "Connect to the robot first."
       if (!name) return "Choose a mechanism first."
       if (!cmd) return "Choose the subsystem’s Live Tuning command first."
@@ -303,9 +333,9 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       // YAMS applies the tunable setpoint every loop as soon as the command runs, and it defaults to 0.
       // Seed it with where the mechanism is right now so starting never moves anything.
       // A voltage left on from an earlier session would be applied as soon as the command runs.
-      releaseVoltage(nt, name)
+      for (const w of all) releaseVoltage(nt, w)
       if (k === "flywheel") {
-        nt.set(t.tuning.setpointVelocity, FLYWHEEL_IDLE_VELOCITY)
+        for (const w of all) nt.set(yamsTopics(w).tuning.setpointVelocity, FLYWHEEL_IDLE_VELOCITY)
       } else {
         const pos = reader.position()
         if (pos === undefined) return "No position telemetry. Set the telemetry verbosity to HIGH on the robot."
@@ -397,15 +427,25 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         return
       }
       const reader = axisReader(nt, cur.mechanismName, cur.axis)
-      const amps = reader.statorCurrent()
+      // Each wheel of a double flywheel has its own motor, so the one drawing the most current counts.
+      let amps: number | undefined
+      let ampsWheel = cur.mechanismName
+      for (const w of cur.wheels) {
+        const a = axisReader(nt, w, cur.axis).statorCurrent()
+        if (a !== undefined && (amps === undefined || Math.abs(a) > Math.abs(amps))) {
+          amps = a
+          ampsWheel = w
+        }
+      }
+      const motor = cur.wheels.length > 1 ? `${ampsWheel} stator current` : "Stator current"
       if (amps !== undefined && Math.abs(amps) > cur.stallCurrent) {
         overCurrentSince ??= Date.now()
         if (Date.now() - overCurrentSince > STALL_DEBOUNCE_MS) {
           if (cur.currentAsWarning) {
             // Fixed text: the live amps would re-render the page every tick.
-            showCurrentWarning(`Stator current is above the ${cur.stallCurrent} A current trip. Over-current is set to warn only.`)
+            showCurrentWarning(`${motor} is above the ${cur.stallCurrent} A current trip. Over-current is set to warn only.`)
           } else {
-            stop(`Stator current ${Math.abs(amps).toFixed(0)} A exceeded the ${cur.stallCurrent} A current trip.`, true, "overcurrent")
+            stop(`${motor} ${Math.abs(amps).toFixed(0)} A exceeded the ${cur.stallCurrent} A current trip.`, true, "overcurrent")
             return
           }
         }
@@ -471,13 +511,13 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   // Leaving the page must not leave anything moving.
   useEffect(() => {
     const onLeave = () => {
-      const { session, commandName, mechanismName } = live.current
+      const { session, commandName, wheels: all } = live.current
       if (!session) return
       stop("Page closed")
       // A closing page never runs stop's timers, so end Live Tuning and voltage mode now, before the page goes: stop
       // has already set the setpoint to where the mechanism is.
       if (commandName) nt.set(liveTuningCommandTopic(commandName), false)
-      if (mechanismName) releaseVoltage(nt, mechanismName)
+      for (const w of all) releaseVoltage(nt, w)
     }
     window.addEventListener("pagehide", onLeave)
     return () => window.removeEventListener("pagehide", onLeave)
@@ -570,6 +610,17 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     (name: string | null) => {
       if (live.current.session) stop("Mechanism changed")
       setMechanismNameState(name)
+      // A wheel can't be its own second wheel.
+      setSecondWheelState((second) => (second === name ? null : second))
+      resetSafety()
+    },
+    [resetSafety, stop],
+  )
+
+  const setSecondWheel = useCallback(
+    (name: string | null) => {
+      if (live.current.session) stop("Mechanism changed")
+      setSecondWheelState(name)
       resetSafety()
     },
     [resetSafety, stop],
@@ -616,6 +667,11 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     setMechanismName,
     commandName,
     setCommandName,
+    secondWheel,
+    setSecondWheel,
+    wheels,
+    wheel,
+    setWheel,
     kind,
     setKind,
     continuous,
@@ -685,12 +741,13 @@ export function useRobotState(): RobotState | null {
   return useMemo(() => decodeControlWord(raw), [raw])
 }
 
-/** Position, velocity and limits of the selected mechanism in setpoint units. */
-export function useAxisValues() {
-  const { nt, mechanismName, axis } = useTuner()
+/** Position, velocity and limits of the selected mechanism, or of a double flywheel's chosen wheel, in setpoint units. */
+export function useAxisValues(name?: string) {
+  const { nt, wheel, axis } = useTuner()
   useNtVersion()
-  if (!mechanismName) return { position: undefined, velocity: undefined, lower: undefined, upper: undefined, current: undefined }
-  const r = axisReader(nt, mechanismName, axis)
+  const of = name ?? wheel
+  if (!of) return { position: undefined, velocity: undefined, lower: undefined, upper: undefined, current: undefined }
+  const r = axisReader(nt, of, axis)
   return {
     position: r.position(),
     velocity: r.velocity(),

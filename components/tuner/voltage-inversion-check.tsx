@@ -10,7 +10,8 @@ import { Switch } from "@/components/ui/switch"
 import { useAxisValues, useNtValue, useRobotState, useTuner } from "@/components/tuner/tuner-context"
 import { LiveRegion, Notice, Panel } from "@/components/tuner/panel"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
-import { axisReader, formatPosition, yamsTopics } from "@/lib/yams/topics"
+import { WheelPicker } from "@/components/tuner/wheel-picker"
+import { axisReader, formatPosition, wheelLabels, yamsTopics } from "@/lib/yams/topics"
 import { formatVolts } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { jogParams } from "@/lib/yams/safety"
@@ -28,7 +29,27 @@ const SEND_INTERVAL_MS = 100
 type Trial = "with" | "against" | null
 
 export function VoltageInversionCheck() {
-  const { mechanismName, commandName, checklistConfirmed, inversionCheck, setInversionCheck, session, kind } = useTuner()
+  const { mechanismName, commandName, checklistConfirmed, inversionCheck, setInversionCheck, session, kind, wheels, wheel, setWheel } = useTuner()
+  // A double flywheel checks one wheel at a time; the step passes once every wheel has.
+  const [passed, setPassed] = useState<string[]>([])
+  const wheelKey = wheels.join("|")
+  const [lastWheelKey, setLastWheelKey] = useState(wheelKey)
+  if (wheelKey !== lastWheelKey) {
+    setLastWheelKey(wheelKey)
+    setPassed([])
+  }
+  const double = wheels.length > 1
+  const labels = wheelLabels(wheels)
+  const wheelPassed = () => {
+    if (!wheel) return
+    const next = passed.includes(wheel) ? passed : [...passed, wheel]
+    setPassed(next)
+    const left = wheels.filter((w) => !next.includes(w))
+    if (left.length === 0) {
+      setInversionCheck("passed")
+      if (mechanismName) setWheel(mechanismName)
+    } else setWheel(left[0])
+  }
   const locked =
     !mechanismName || !commandName
       ? "Choose a mechanism first."
@@ -43,11 +64,22 @@ export function VoltageInversionCheck() {
         title="Check inversions"
         description={
           inversionCheck === "passed"
-            ? "Position followed the sign of the voltage."
+            ? double
+              ? "Each wheel’s speed followed the sign of the voltage."
+              : "Position followed the sign of the voltage."
             : "Skipped. Only skip this when the motor, encoder and follower inversions were already checked on this robot."
         }
       >
-        <Button variant="outline" className="self-start" disabled={session !== null} onClick={() => setInversionCheck("pending")}>
+        <Button
+          variant="outline"
+          className="self-start"
+          disabled={session !== null}
+          onClick={() => {
+            setPassed([])
+            if (mechanismName) setWheel(mechanismName)
+            setInversionCheck("pending")
+          }}
+        >
           Run the check again
         </Button>
       </Panel>
@@ -59,22 +91,37 @@ export function VoltageInversionCheck() {
       step={3}
       title="Check inversions"
       description={
-        kind === "flywheel"
+        double
+          ? "Confirm each wheel speeds up forward with positive voltage, one wheel at a time. Drive it with a small voltage while enabled. Only needed once during setup."
+          : kind === "flywheel"
           ? "Confirm the flywheel speeds up forward with positive voltage. Drive it with a small voltage while enabled. Only needed once during setup."
           : "Confirm position goes up when the mechanism moves in its positive direction. Drive it with a small voltage while enabled. Only needed once during setup."
       }
       locked={locked}
     >
-      <CheckBody key={mechanismName ?? ""} />
+      {double && (
+        <div className="flex flex-col gap-2">
+          <WheelPicker disabled={session !== null} />
+          <ul className="flex flex-col gap-1 text-sm">
+            {wheels.map((w) => (
+              <li key={w} className="flex items-center gap-2">
+                {passed.includes(w) ? <CircleCheck className="size-4 shrink-0" aria-hidden /> : <CircleDashed className="size-4 shrink-0" aria-hidden />}
+                {`${labels[w]}: ${passed.includes(w) ? "passed" : "not checked yet"}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <CheckBody key={wheel ?? ""} onPassed={wheelPassed} />
     </Panel>
   )
 }
 
-function CheckBody() {
-  const { nt, mechanismName, axis, kind, session, starting, startLiveTuning, stop, setInversionCheck } = useTuner()
+function CheckBody({ onPassed }: { onPassed: () => void }) {
+  const { nt, wheel: name, wheels, axis, kind, session, starting, startLiveTuning, stop, setInversionCheck } = useTuner()
   const { position, velocity } = useAxisValues()
   const flywheel = kind === "flywheel"
-  const topics = mechanismName ? yamsTopics(mechanismName) : null
+  const topics = name ? yamsTopics(name) : null
   // Subscribing re-renders when the topic is announced by a YAMS version that supports it.
   useNtValue<boolean>(topics?.tuning.voltageEnabled ?? null)
   const supported = !!topics && nt.isAnnounced(topics.tuning.voltageEnabled) && nt.isAnnounced(topics.tuning.voltageSetpoint)
@@ -114,8 +161,8 @@ function CheckBody() {
   // the change in its speed rather than its position: after positive voltage it keeps coasting forward, so its
   // position still rises under negative voltage, while its speed falls as it should.
   useEffect(() => {
-    if (!active || !mechanismName) return
-    const reader = axisReader(nt, mechanismName, axis)
+    if (!active || !name) return
+    const reader = axisReader(nt, name, axis)
     const measure = () => (flywheel ? reader.velocity() : reader.position())
     const threshold = flywheel ? FLYWHEEL_DIRECTION_RPM : jogParams(axis).directionThreshold
     let trialSign = 0
@@ -140,7 +187,7 @@ function CheckBody() {
       if (result === "against") {
         // Back off immediately: a reversed motor or follower keeps fighting the mechanism.
         commanded.current = 0
-        nt.set(yamsTopics(mechanismName).tuning.voltageSetpoint, 0)
+        nt.set(yamsTopics(name).tuning.voltageSetpoint, 0)
         setVolts(0)
         setWarning(
           flywheel
@@ -150,7 +197,7 @@ function CheckBody() {
       } else setWarning(null)
     }, 20)
     return () => clearInterval(id)
-  }, [active, mechanismName, axis, nt, flywheel])
+  }, [active, name, axis, nt, flywheel])
 
   const begin = async () => {
     setError(null)
@@ -311,8 +358,8 @@ function CheckBody() {
               className="ms-auto"
               disabled={!passed}
               onClick={() => {
-                stop("Inversion check passed")
-                setInversionCheck("passed")
+                stop(wheels.length > 1 ? `Inversion check passed for ${name}` : "Inversion check passed")
+                onPassed()
               }}
             >
               Finish check

@@ -234,3 +234,13 @@ export function formatNumber(value: number | undefined, digits = 2) {
   if (value === undefined) return EMPTY
   return num(value, digits)
 }
+
+/**
+ * A short name for each wheel of a double flywheel: its mechanism's telemetry name, the part before the motor's
+ * ("LowerFlyWheel" for "LowerFlyWheel/LowerMotor"), when that tells the wheels apart. Otherwise the whole name.
+ */
+export function wheelLabels(wheels: string[]): Record<string, string> {
+  const short = wheels.map((w) => w.split("/")[0])
+  const unique = new Set(short).size === short.length
+  return Object.fromEntries(wheels.map((w, i) => [w, unique ? short[i] : w]))
+}

@@ -76,7 +76,29 @@ const DEFS: MechDef[] = [
     profiled: false,
     gains: { kP: 5, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
   },
+  // A double flywheel, as in YAMS's double_flywheel example: two FlyWheels in one subsystem, a lower and an upper
+  // wheel with one motor each, sharing the subsystem's Live Tuning command. kV is 0 on purpose, and the upper wheel is
+  // lighter, so the wheels need different gains.
+  {
+    name: "LowerFlyWheel/LowerMotor",
+    command: "DoubleFlyWheelSubsystem",
+    kind: "flywheel",
+    sim: { kind: "flywheel", gearing: 1, motorCount: 1, moi: 0.0025 },
+    profiled: false,
+    gains: { kP: 5, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
+  },
+  {
+    name: "UpperFlyWheel/UpperMotor",
+    command: "DoubleFlyWheelSubsystem",
+    kind: "flywheel",
+    sim: { kind: "flywheel", gearing: 1, motorCount: 1, moi: 0.0015 },
+    profiled: false,
+    gains: { kP: 5, kI: 0, kD: 0, kS: 0, kV: 0, kA: 0, statorLimit: 40, supplyLimit: 60, closedRamp: 0 },
+  },
 ]
+
+/** Every Live Tuning command, once: a double flywheel's two wheels share one. */
+const COMMANDS = [...new Set(DEFS.map((d) => d.command))]
 
 const GAIN_PATHS: Record<string, string> = {
   kP: "closedloop/feedback/kP",
@@ -376,7 +398,7 @@ function topicsFor(robot: DemoRobot, index: number): Map<string, TopicDef> {
   return topics
 }
 
-const runningTopic = (def: MechDef) => `/Tuning/${def.command}/Live Tuning/running`
+const runningTopic = (command: string) => `/Tuning/${command}/Live Tuning/running`
 
 /**
  * Stands in for FRC Web Components' Nt4Client, talking to a DemoRobot instead of a NetworkTables server.
@@ -401,21 +423,23 @@ export class DemoNt4Client {
     private onConnect: () => void,
   ) {
     DEFS.forEach((_, i) => topicsFor(robot, i).forEach((v, k) => this.topics.set(k, v)))
-    DEFS.forEach((def, i) => {
-      const name = runningTopic(def)
+    for (const command of COMMANDS) {
+      const name = runningTopic(command)
+      // The command runs every mechanism registered on its subsystem.
+      const mechs = () => robot.mechanisms.filter((m) => m.def.command === command)
       this.topics.set(name, {
         type: "boolean",
-        read: () => robot.mechanisms[i].running,
+        read: () => mechs().some((m) => m.running),
         write: (v) => {
-          const mech = robot.mechanisms[i]
-          if (v === true && !mech.running) {
+          const running = mechs().some((m) => m.running)
+          if (v === true && !running) {
             // A command only starts while the robot is enabled; otherwise the scheduler sets it back.
-            if (robot.enabled) mech.start()
+            if (robot.enabled) mechs().forEach((m) => m.start())
             else setTimeout(() => this.send(name), 40)
-          } else if (v !== true && mech.running) mech.stop()
+          } else if (v !== true && running) mechs().forEach((m) => m.stop())
         },
       })
-    })
+    }
     this.topics.set("/DriverStation/ControlWord", { type: "struct:ControlWord", read: () => robot.controlWord(), data: true })
   }
 
@@ -466,8 +490,8 @@ export class DemoNt4Client {
 
   /** Values the robot changed on its own, such as a command ending or the robot being disabled. */
   private publishRobotChanges() {
-    for (const def of DEFS) {
-      const name = runningTopic(def)
+    for (const command of COMMANDS) {
+      const name = runningTopic(command)
       const running = this.topics.get(name)?.read() === true
       if (this.runningSent.get(name) !== running) {
         this.runningSent.set(name, running)

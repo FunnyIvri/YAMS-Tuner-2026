@@ -13,7 +13,7 @@ export function StopBar() {
     stop,
     lastStop,
     clearLastStop,
-    mechanismName,
+    wheels,
     rangeWarning,
     currentWarning,
     currentAsWarning,
@@ -63,7 +63,7 @@ export function StopBar() {
                           ? "Driving with voltage"
                           : "Live tuning"}
                 </span>
-                <span className="min-w-0 break-words opacity-80">{`· ${mechanismName ?? ""} ·`}</span>
+                <span className="min-w-0 break-words opacity-80">{`· ${wheels.join(" + ")} ·`}</span>
                 <span className="whitespace-nowrap opacity-80">
                   Press <Kbd>Space</Kbd> anywhere to stop
                 </span>
