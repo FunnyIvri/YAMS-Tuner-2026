@@ -16,7 +16,7 @@ import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 import { EMPTY, num } from "@/lib/format"
-import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
+import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep, overshootTolerance } from "@/lib/yams/safety"
 
 /** Why the Live tune step can't be used yet, or null once it can. */
 function useLiveTuneLock(): string | null {
@@ -113,6 +113,10 @@ function PositionControl() {
   const sliderMax = bounded ? hi : axis === "linear" ? 2 : 180
   const sliderStep = axis === "linear" ? 0.005 : 0.5
   const clamp = (v: number) => (bounded ? Math.min(hi, Math.max(lo, v)) : v)
+  // Outside the range, say after sagging while disabled. Live Tuning may still start, to bring it back.
+  const tol = overshootTolerance(axis)
+  const outside =
+    bounded && position !== undefined ? (position < limitLo - tol ? "below" : position > limitHi + tol ? "above" : null) : null
   const draftNumber = Number(draft)
   const sliderValue = Math.min(
     sliderMax,
@@ -171,6 +175,11 @@ function PositionControl() {
         verifiedLower={verified.lower}
         verifiedUpper={verified.upper}
       />
+      {session === null && outside && (
+        <Notice tone="warn">
+          {`The mechanism is ${outside} the ${boundLabel} (${outside === "below" ? "lower" : "upper"} end ${formatPosition(outside === "below" ? limitLo : limitHi, axis)}). Start Live Tuning, then send a setpoint inside the range to bring it back. It holds where it is until then, and moving further out stops it.`}
+        </Notice>
+      )}
       <SessionButton />
       <fieldset disabled={!active} className="flex flex-col gap-3 disabled:opacity-50">
         <legend className="sr-only">Position setpoint</legend>

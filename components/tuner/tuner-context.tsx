@@ -346,9 +346,17 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     [nt],
   )
 
+  /**
+   * A session that starts with the mechanism outside its range, say an arm that sagged below it while disabled, is
+   * allowed to bring it back: it may move back toward the range, never further out. Back inside, the usual rule applies.
+   * "unchecked" until the session's first position check.
+   */
+  const escape = useRef<"unchecked" | null | { side: "below" | "above"; worst: number }>("unchecked")
+
   // Safety watchdog: runs while a session we started is active.
   useEffect(() => {
     if (!session) {
+      escape.current = "unchecked"
       setRangeWarning(null)
       setCurrentWarning(null)
       return
@@ -417,15 +425,41 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         const upper = useVerified ? cur.verified.upper : reader.upperLimit()
         const below = lower !== null && lower !== undefined && pos < lower - tol
         const above = upper !== null && upper !== undefined && pos > upper + tol
+        const range = useVerified ? "verified range" : "soft limits"
+        if (escape.current === "unchecked") escape.current = below ? { side: "below", worst: pos } : above ? { side: "above", worst: pos } : null
+        const e = escape.current
+        if (e) {
+          const outside = e.side === "below" ? below : above
+          if (!outside) {
+            // Back inside: from here on, leaving the range stops as usual.
+            escape.current = null
+          } else {
+            const bound = formatPosition((e.side === "below" ? lower : upper) as number, cur.axis)
+            const end = `${e.side === "below" ? "lower" : "upper"} end ${bound}`
+            const further = e.side === "below" ? pos < e.worst - tol : pos > e.worst + tol
+            if (further && !cur.isSimulation) {
+              stop(
+                `Stopped: the mechanism moved further ${e.side} the ${range} (${end}) instead of back toward it. Send a setpoint inside the range, or drive it back on the Voltage tab.`,
+                true,
+              )
+              return
+            }
+            // The closest it has come back: sagging back out past that, beyond the tolerance, counts as moving further.
+            e.worst = e.side === "below" ? Math.max(e.worst, pos) : Math.min(e.worst, pos)
+            showWarning(
+              `The mechanism is ${e.side} the ${range} (${end}). Bring it back inside: send a setpoint inside the range, or drive it back on the Voltage tab. Moving it further out stops.`,
+            )
+            return
+          }
+        }
         if (below || above) {
           const bound = formatPosition((below ? lower : upper) as number, cur.axis)
-          const range = useVerified ? "verified range" : "soft limits"
           const where = `${below ? "below" : "above"} the ${range} (${below ? "lower" : "upper"} end ${bound})`
           // A simulated mechanism cannot break anything, so only warn and keep tuning.
           if (cur.isSimulation) showWarning(`The mechanism is ${where}. On a real robot this would stop it.`)
           else
             stop(
-              `Stopped: the mechanism went ${where}. Disable the robot and move it back inside, or change the range on the Settings card’s Tuner tab.`,
+              `Stopped: the mechanism went ${where}. Start again to bring it back: a setpoint inside the range, or driving back on the Voltage tab, is allowed. Or change the range on the Settings card’s Tuner tab.`,
               true,
             )
         } else showWarning(null)

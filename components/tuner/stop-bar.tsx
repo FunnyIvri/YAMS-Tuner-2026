@@ -122,7 +122,7 @@ export function StopBar() {
         <div role="alert" className="bg-hazard text-hazard-foreground">
           <p className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-sm leading-relaxed">
             <TriangleAlert className="size-4 shrink-0" aria-hidden />
-            <span className="font-mono text-xs font-semibold uppercase tracking-wider">Sim warning</span>
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider">Out of range</span>
             <span>{rangeWarning}</span>
           </p>
         </div>
