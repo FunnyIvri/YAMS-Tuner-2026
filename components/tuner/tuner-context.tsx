@@ -288,12 +288,12 @@ export function TunerProvider({ children }: { children: ReactNode }) {
   const startLiveTuning = useCallback(
     async (purpose: SessionPurpose): Promise<string | null> => {
       const { mechanismName: name, commandName: cmd, kind: k, axis: ax } = live.current
-      if (nt.getStatus() !== "connected") return "Not connected to the robot."
+      if (nt.getStatus() !== "connected") return "Connect to the robot first."
       if (!name) return "Choose a mechanism first."
-      if (!cmd) return "Choose the subsystem's Live Tuning command first."
+      if (!cmd) return "Choose the subsystem’s Live Tuning command first."
       const state = decodeControlWord(nt.get(CONTROL_WORD))
       if (!state?.enabled) return "Enable the robot from the Driver Station first (Teleop or Test)."
-      if (state.eStop) return "The robot is E-stopped."
+      if (state.eStop) return "The robot is E-stopped. Restart the robot to clear the E-stop, then start again."
       const t = yamsTopics(name)
       const reader = axisReader(nt, name, ax)
       const commandTopic = liveTuningCommandTopic(cmd)
@@ -319,8 +319,8 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       setStarting(true)
       try {
         await sleep(150)
-        if (cancelled()) return "Start cancelled."
-        if (nt.getStatus() !== "connected") return "Lost connection while starting."
+        if (cancelled()) return "Start cancelled. Press Start again when you’re ready."
+        if (nt.getStatus() !== "connected") return "Lost connection while starting. Reconnect, then start again."
         nt.set(commandTopic, true)
 
         const deadline = Date.now() + 1500
@@ -328,7 +328,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
           await sleep(50)
           if (cancelled()) {
             nt.set(commandTopic, false)
-            return "Start cancelled."
+            return "Start cancelled. Press Start again when you’re ready."
           }
           if (nt.get<boolean>(commandTopic) === true) {
             setLastStop(null)
@@ -372,20 +372,20 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       if (!cur.mechanismName || !cur.commandName) return
       if (nt.getStatus() !== "connected") {
         setSession(null)
-        setLastStop({ reason: "Connection to the robot was lost. The robot keeps its last setpoint until disabled.", at: Date.now(), fault: true })
+        setLastStop({ reason: "Connection to the robot was lost, and it keeps its last setpoint until disabled. Disable it from the Driver Station, then reconnect.", at: Date.now(), fault: true })
         return
       }
       const state = decodeControlWord(nt.get(CONTROL_WORD))
       if (!state?.enabled) {
         setSession(null)
-        setLastStop({ reason: "Robot was disabled. Live Tuning ended.", at: Date.now(), fault: false })
+        setLastStop({ reason: "Robot was disabled, so everything stopped. Enable it, then start again.", at: Date.now(), fault: false })
         return
       }
       const running = nt.get<boolean>(liveTuningCommandTopic(cur.commandName))
       if (running === true) sawRunning = true
       else if (sawRunning) {
         setSession(null)
-        setLastStop({ reason: "The Live Tuning command ended on the robot.", at: Date.now(), fault: true })
+        setLastStop({ reason: "The Live Tuning command ended on the robot, so everything stopped. Another command may have taken the subsystem. Start again.", at: Date.now(), fault: true })
         return
       }
       const reader = axisReader(nt, cur.mechanismName, cur.axis)
@@ -395,9 +395,9 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         if (Date.now() - overCurrentSince > STALL_DEBOUNCE_MS) {
           if (cur.currentAsWarning) {
             // Fixed text: the live amps would re-render the page every tick.
-            showCurrentWarning(`Stator current is above the ${cur.stallCurrent} A limit. Over-current is set to warn only.`)
+            showCurrentWarning(`Stator current is above the ${cur.stallCurrent} A current trip. Over-current is set to warn only.`)
           } else {
-            stop(`Stator current ${Math.abs(amps).toFixed(0)} A exceeded the ${cur.stallCurrent} A limit.`, true, "overcurrent")
+            stop(`Stator current ${Math.abs(amps).toFixed(0)} A exceeded the ${cur.stallCurrent} A current trip.`, true, "overcurrent")
             return
           }
         }
@@ -418,13 +418,16 @@ export function TunerProvider({ children }: { children: ReactNode }) {
         const below = lower !== null && lower !== undefined && pos < lower - tol
         const above = upper !== null && upper !== undefined && pos > upper + tol
         if (below || above) {
+          const bound = formatPosition((below ? lower : upper) as number, cur.axis)
+          const range = useVerified ? "verified range" : "soft limits"
+          const where = `${below ? "below" : "above"} the ${range} (${below ? "lower" : "upper"} end ${bound})`
           // A simulated mechanism cannot break anything, so only warn and keep tuning.
-          if (cur.isSimulation) {
-            const bound = formatPosition((below ? lower : upper) as number, cur.axis)
-            showWarning(
-              `Mechanism is ${below ? "below" : "above"} its range of motion (${below ? "lower" : "upper"} limit ${bound}). On a real robot this would stop Live Tuning.`,
+          if (cur.isSimulation) showWarning(`The mechanism is ${where}. On a real robot this would stop it.`)
+          else
+            stop(
+              `Stopped: the mechanism went ${where}. Disable the robot and move it back inside, or change the range on the Settings card’s Tuner tab.`,
+              true,
             )
-          } else stop("Mechanism left its allowed range of motion.", true)
         } else showWarning(null)
       } else showWarning(null)
     }, 20)
@@ -446,8 +449,9 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("pagehide", onLeave)
   }, [stop, nt])
 
-  // Space (and Esc) always stops. Space is reserved as the stop key everywhere on the page, so it is swallowed
-  // in the capture phase and can never activate a focused control such as the Start button.
+  // Space (and Esc) always stops. While anything runs, Space is the stop key everywhere on the page: it is swallowed in
+  // the capture phase and can never activate a focused control such as the Start button. While nothing runs it still
+  // ticks checkboxes and flips switches.
   useEffect(() => {
     const isSpace = (e: KeyboardEvent) => e.code === "Space" || e.key === " "
     const isTextField = (el: EventTarget | null) => {
@@ -455,6 +459,12 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       if (el.isContentEditable || el instanceof HTMLTextAreaElement) return true
       return el instanceof HTMLInputElement && ["text", "search", "url", "email"].includes(el.type)
     }
+    // When nothing is running, Space ticks checkboxes and flips switches as usual, so the page works from the keyboard.
+    const isToggle = (el: EventTarget | null) =>
+      el instanceof HTMLElement &&
+      el.matches('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="switch"], [role="radio"]')
+    const isCheckbox = (el: EventTarget | null) =>
+      el instanceof HTMLElement && el.matches('input[type="checkbox"], [role="checkbox"]')
     const isActive = () => {
       const cur = live.current
       if (cur.session || startingRef.current) return true
@@ -463,11 +473,17 @@ export function TunerProvider({ children }: { children: ReactNode }) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isSpace(e)) {
         const active = isActive()
-        // Typing a space into a text field is only allowed while nothing is running.
-        if (!active && isTextField(e.target)) return
+        // Typing a space into a text field, or ticking a box with it, is only allowed while nothing is running.
+        if (!active && (isTextField(e.target) || isToggle(e.target))) return
         e.preventDefault()
         e.stopPropagation()
         if (active) stop("Stopped with Space")
+        return
+      }
+      // While something runs Space is taken, so Enter ticks a checkbox too.
+      if (e.key === "Enter" && !e.repeat && isCheckbox(e.target)) {
+        e.preventDefault()
+        ;(e.target as HTMLElement).click()
         return
       }
       if (e.key === "Escape" && isActive()) {
@@ -476,7 +492,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
-      if (isSpace(e) && !isTextField(e.target)) {
+      if (isSpace(e) && !isTextField(e.target) && !(isToggle(e.target) && !isActive())) {
         e.preventDefault()
         e.stopPropagation()
       }

@@ -15,7 +15,7 @@ export function SafetyChecklist({ onContinue }: { onContinue: () => void }) {
     <Panel
       step={2}
       title="Pre-motion checklist"
-      description="Nothing moves until every item is confirmed. The current trip can be changed later under the Settings card's Tuner tab."
+      description="Nothing moves until every item is confirmed. The current trip can be changed later under the Settings card’s Tuner tab."
       locked={ready ? null : "Choose a mechanism and its Live Tuning command first."}
     >
       <ChecklistBody key={`${mechanismName}|${kind}|${continuous}`} onContinue={onContinue} />

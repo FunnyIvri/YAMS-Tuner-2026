@@ -37,7 +37,8 @@ export function TravelGauge({
   const zoneUpper = hasVerified ? verifiedUpper : softLower !== undefined && softUpper !== undefined ? softUpper : undefined
 
   return (
-    <figure className="flex flex-col gap-2">
+    // A numeric axis, minimum on the left: it stays left to right with its labels even on a right-to-left page.
+    <figure dir="ltr" className="flex flex-col gap-2">
       <div className="relative h-20 overflow-hidden rounded-md border border-border bg-background">
         {zoneLower !== undefined && (
           <div className="hazard-stripes absolute inset-y-0 left-0 opacity-25" style={{ width: pct(zoneLower) }} aria-hidden />
@@ -58,7 +59,7 @@ export function TravelGauge({
           ),
         )}
         {setpoint !== undefined && (
-          <div className="absolute inset-y-0 w-px border-l-2 border-dashed border-destructive" style={{ left: pct(setpoint) }} aria-hidden />
+          <div className="absolute inset-y-0 w-px border-s-2 border-dashed border-setpoint" style={{ left: pct(setpoint) }} aria-hidden />
         )}
         {position !== undefined && (
           <div className="absolute inset-y-0 -translate-x-1/2" style={{ left: pct(position) }} aria-hidden>
@@ -69,13 +70,13 @@ export function TravelGauge({
       <figcaption className="flex flex-wrap justify-between gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground tabular">
         <span>
           {softLower !== undefined && softUpper !== undefined
-            ? `Soft ${formatPosition(softLower, axis)} … ${formatPosition(softUpper, axis)}`
+            ? `Soft ${formatPosition(softLower, axis)} – ${formatPosition(softUpper, axis)}`
             : "No soft limits"}
         </span>
         <span className="text-foreground">{`Now ${formatPosition(position, axis)}`}</span>
         <span>
           {hasVerified
-            ? `Verified ${formatPosition(verifiedLower, axis)} … ${formatPosition(verifiedUpper, axis)}`
+            ? `Verified ${formatPosition(verifiedLower, axis)} – ${formatPosition(verifiedUpper, axis)}`
             : "Not verified"}
         </span>
       </figcaption>

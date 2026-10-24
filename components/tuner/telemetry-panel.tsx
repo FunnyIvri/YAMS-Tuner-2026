@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
 import { Panel, Readout } from "@/components/tuner/panel"
 import { axisReader, formatNumber, formatPosition, velocityUnit, yamsTopics } from "@/lib/yams/topics"
+import { EMPTY, NBSP, num } from "@/lib/format"
 
 const WINDOW_MS = 10_000
 
@@ -21,7 +22,7 @@ export function TelemetryPanel() {
       locked={status !== "connected" || !mechanismName ? "Live position, setpoint and current appear here." : null}
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 short:grid-cols-4 short:gap-1.5">
-        <Readout label="Position" value={kind === "flywheel" ? "-" : formatPosition(position, axis)} />
+        <Readout label="Position" value={kind === "flywheel" ? EMPTY : formatPosition(position, axis)} />
         <Readout label={`Velocity (${velocityUnit(axis)})`} value={formatNumber(velocity, axis === "linear" ? 3 : 0)} />
         <Readout
           label="Stator (A)"
@@ -58,7 +59,11 @@ function MotorTemp({ celsius }: { celsius: number | undefined }) {
     }
   }
   const value =
-    typeof celsius !== "number" ? "-" : fahrenheit ? `${((celsius * 9) / 5 + 32).toFixed(0)} °F` : `${celsius.toFixed(0)} °C`
+    typeof celsius !== "number"
+      ? EMPTY
+      : fahrenheit
+        ? `${num((celsius * 9) / 5 + 32, 0)}${NBSP}°F`
+        : `${num(celsius, 0)}${NBSP}°C`
   return (
     <p className="font-mono text-xs text-muted-foreground short:hidden">
       {"Motor temp "}
@@ -67,7 +72,7 @@ function MotorTemp({ celsius }: { celsius: number | undefined }) {
         onClick={toggle}
         title={fahrenheit ? "Show in Celsius" : "Show in Fahrenheit"}
         aria-label={`Motor temp ${value}. Switch to ${fahrenheit ? "Celsius" : "Fahrenheit"}`}
-        className="rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         {value}
       </button>
@@ -91,7 +96,20 @@ function Chart() {
     const ctx = canvas.getContext("2d")
     if (!ctx) return
     const samples: { t: number; measured?: number; setpoint?: number; current?: number }[] = []
-    const colors = { fg: cssVar("--foreground"), muted: cssVar("--muted-foreground"), grid: cssVar("--border"), sp: cssVar("--destructive"), hz: cssVar("--hazard") }
+    // Read again when the theme changes, so the chart follows it.
+    const readColors = () => ({
+      fg: cssVar("--foreground"),
+      muted: cssVar("--muted-foreground"),
+      grid: cssVar("--border"),
+      sp: cssVar("--setpoint"),
+      limit: cssVar("--destructive"),
+      hz: cssVar("--hazard"),
+      hzText: cssVar("--hazard-text"),
+      font: `12px ${cssVar("--font-jetbrains-mono") || "ui-monospace"}, monospace`,
+    })
+    let colors = readColors()
+    const themeObserver = new MutationObserver(() => (colors = readColors()))
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
     let raf = 0
     let lastSample = 0
 
@@ -150,7 +168,7 @@ function Chart() {
       const y = (v: number) => 8 + (1 - (v - lo) / (hi - lo)) * plotH
       const x = (t: number) => left + (1 - (now - t) / WINDOW_MS) * plotW
 
-      ctx.font = "11px 'IBM Plex Mono', monospace"
+      ctx.font = colors.font
       ctx.fillStyle = colors.muted
       ctx.strokeStyle = colors.grid
       ctx.lineWidth = 1
@@ -161,7 +179,7 @@ function Chart() {
         ctx.moveTo(left, yy)
         ctx.lineTo(w - right, yy)
         ctx.stroke()
-        ctx.fillText(v.toFixed(axis === "linear" || Math.abs(hi - lo) < 5 ? 2 : 0), 4, yy + 4)
+        ctx.fillText(num(v, axis === "linear" || Math.abs(hi - lo) < 5 ? 2 : 0), 4, yy + 4)
       }
 
       // Stator current bars share the plot area but use their own 0-based amp scale on the right axis.
@@ -177,19 +195,19 @@ function Chart() {
       ctx.globalAlpha = 0.28
       for (const s of samples) {
         if (s.current === undefined || s.current <= 0) continue
-        ctx.fillStyle = s.current > stallCurrent ? colors.sp : colors.hz
+        ctx.fillStyle = s.current > stallCurrent ? colors.limit : colors.hz
         const top = yAmps(s.current)
         ctx.fillRect(x(s.t) - barW, top, barW, 8 + plotH - top)
       }
       ctx.globalAlpha = 0.6
       ctx.setLineDash([2, 3])
-      ctx.strokeStyle = colors.sp
+      ctx.strokeStyle = colors.limit
       ctx.beginPath()
       ctx.moveTo(left, yAmps(stallCurrent))
       ctx.lineTo(w - right, yAmps(stallCurrent))
       ctx.stroke()
       ctx.restore()
-      ctx.fillStyle = colors.hz
+      ctx.fillStyle = colors.hzText
       ctx.textAlign = "right"
       for (let i = 0; i <= 4; i++) {
         const a = (ampMax * i) / 4
@@ -233,6 +251,7 @@ function Chart() {
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      themeObserver.disconnect()
     }
   }, [])
 
@@ -244,13 +263,13 @@ function Chart() {
         role="img"
         aria-label="Measured value, setpoint and stator current over the last 10 seconds"
       />
-      <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground short:gap-x-2.5 short:text-[10px]">
+      <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground short:gap-x-2.5">
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="h-0.5 w-4 bg-foreground" />
           Measured
         </span>
         <span className="flex items-center gap-1.5">
-          <span aria-hidden className="h-0.5 w-4 bg-destructive" />
+          <span aria-hidden className="h-0.5 w-4 bg-setpoint" />
           Setpoint
         </span>
         <span className="flex items-center gap-1.5">
@@ -259,7 +278,7 @@ function Chart() {
         </span>
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="w-4 border-t border-dotted border-destructive" />
-          Current limit
+          Current trip
         </span>
         {kind !== "flywheel" && verified.lower !== null && verified.upper !== null && (
           <span className="flex items-center gap-1.5">
@@ -267,7 +286,7 @@ function Chart() {
             Verified range
           </span>
         )}
-        <span className="ml-auto font-mono">10 s</span>
+        <span className="ms-auto font-mono">10{"\u00a0"}s</span>
       </figcaption>
     </figure>
   )

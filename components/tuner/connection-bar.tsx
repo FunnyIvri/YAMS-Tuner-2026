@@ -45,12 +45,12 @@ export function ConnectionBar() {
         <div className="flex items-center gap-3">
           <img src={yamsLogo.src} alt="" aria-hidden width={42} height={28} className="h-9 w-auto shrink-0" />
           <div className="flex flex-col gap-1.5">
-            <h1 className="font-pixel text-xs leading-none tracking-wide text-primary uppercase">YAMS Live Tuner</h1>
+            <h1 className="font-pixel text-xs leading-none tracking-wide text-primary-text uppercase">YAMS Live Tuner</h1>
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
               Elevators, arms, pivots and flywheels over NT4
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-1 lg:ml-2">
+          <div className="ms-auto flex items-center gap-1 lg:ms-2">
             <ThemeToggle />
           </div>
         </div>
@@ -140,13 +140,13 @@ export function ConnectionBar() {
                     : "Offline"}
             </span>
             {connected && robot && (
-              <span className={cn("border-l border-border pl-2", robot.eStop && "text-destructive")}>
+              <span className={cn("border-s border-border ps-2", robot.eStop && "text-destructive-text")}>
                 {robot.eStop ? "E-STOP" : `${MODE_LABEL[robot.mode]} · ${robot.enabled ? "Enabled" : "Disabled"}`}
               </span>
             )}
           </div>
           {error && (
-            <p role="alert" className="w-full text-xs text-destructive">
+            <p role="alert" className="w-full text-xs text-destructive-text">
               {error}
             </p>
           )}

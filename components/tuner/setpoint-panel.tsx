@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { SetpointAlternator } from "@/components/tuner/setpoint-alternator"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
-import { CardTabs, Notice, Panel } from "@/components/tuner/panel"
+import { CardTabPanel, CardTabs, LiveRegion, Notice, Panel } from "@/components/tuner/panel"
 import { VoltageDrive, useLiveTune, type LiveTab } from "@/components/tuner/voltage-drive"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { formatPosition, positionUnit, yamsTopics } from "@/lib/yams/topics"
+import { cn } from "@/lib/utils"
+import { EMPTY, num } from "@/lib/format"
 import { DEFAULT_FLYWHEEL_MAX_RPM, DEFAULT_FLYWHEEL_RANGE, FLYWHEEL_IDLE_VELOCITY, defaultMaxStep } from "@/lib/yams/safety"
 
 /** Why the Live tune step can't be used yet, or null once it can. */
@@ -46,7 +48,9 @@ export function SetpointPanel() {
       locked={useLiveTuneLock()}
     >
       <CardTabs label="Setpoints or voltage" tabs={TABS} value={tab} onChange={setTab} />
-      {tab === "voltage" ? <VoltageDrive /> : kind === "flywheel" ? <VelocityControl /> : <PositionControl />}
+      <CardTabPanel label="Setpoints or voltage" value={tab}>
+        {tab === "voltage" ? <VoltageDrive /> : kind === "flywheel" ? <VelocityControl /> : <PositionControl />}
+      </CardTabPanel>
     </Panel>
   )
 }
@@ -68,7 +72,13 @@ function SessionButton() {
       {session === "verify" && <p className="text-sm text-muted-foreground">Finish range verification first.</p>}
       {session === "voltage" && <p className="text-sm text-muted-foreground">Finish the inversion check first.</p>}
       {session === "jog" && <p className="text-sm text-muted-foreground">Stop driving with voltage first.</p>}
-      {error && <Notice tone="danger">{error}</Notice>}
+      <LiveRegion assertive>
+        {error && (
+          <Notice tone="danger" live={false}>
+            {error}
+          </Notice>
+        )}
+      </LiveRegion>
     </div>
   )
 }
@@ -128,7 +138,7 @@ function PositionControl() {
     let value = raw
     if (bounded && (raw < lo || raw > hi)) {
       value = Math.min(hi, Math.max(lo, raw))
-      setError(`Clamped to the slider's range (${formatPosition(lo, axis)} to ${formatPosition(hi, axis)}).`)
+      setError(`Limited to the slider’s range (${formatPosition(lo, axis)} to ${formatPosition(hi, axis)}).`)
     }
     const from = typeof setpoint === "number" ? setpoint : position
     if (!profiled && from !== undefined && Math.abs(value - from) > maxStep) {
@@ -251,7 +261,7 @@ function PositionControl() {
           </p>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => write(pending)}>
-              Confirm move
+              {`Move to ${formatPosition(pending, axis)}`}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setPending(null)}>
               Cancel
@@ -259,7 +269,13 @@ function PositionControl() {
           </div>
         </div>
       )}
-      {error && <Notice tone="warn">{error}</Notice>}
+      <LiveRegion>
+        {error && (
+          <Notice tone="warn" live={false}>
+            {error}
+          </Notice>
+        )}
+      </LiveRegion>
     </>
   )
 }
@@ -281,7 +297,7 @@ function VelocityControl() {
     if (!Number.isFinite(raw)) return setError("Enter a number.")
     // Idle always gets through, so the flywheel can be stopped whatever the range.
     const value = raw === 0 ? 0 : clampRpm(raw)
-    if (value !== raw) setError(`Clamped to the slider's range, ${lo} to ${hi} RPM.`)
+    if (value !== raw) setError(`Limited to the slider’s range, ${lo} to ${hi} RPM.`)
     // YAMS ignores a velocity setpoint of exactly 0.
     nt.set(t.tuning.setpointVelocity, value === 0 ? FLYWHEEL_IDLE_VELOCITY : value)
     setDraft(String(Math.round(value)))
@@ -305,12 +321,12 @@ function VelocityControl() {
     <>
       <div className="grid grid-cols-2 gap-2 font-mono tabular">
         <div className="rounded-md border border-border bg-background px-3 py-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Measured</p>
-          <p className="text-2xl font-medium">{velocity === undefined ? "-" : `${velocity.toFixed(0)}`}</p>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Measured</p>
+          <p className="text-2xl font-medium">{velocity === undefined ? EMPTY : num(velocity, 0)}</p>
         </div>
         <div className="rounded-md border border-border bg-background px-3 py-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Setpoint</p>
-          <p className="text-2xl font-medium">{shownSetpoint === undefined ? "-" : `${shownSetpoint.toFixed(0)}`}</p>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Setpoint</p>
+          <p className="text-2xl font-medium">{shownSetpoint === undefined ? EMPTY : num(shownSetpoint, 0)}</p>
         </div>
       </div>
       <SessionButton />
@@ -363,7 +379,7 @@ function VelocityControl() {
           onCommit={send}
         />
         <p className="text-xs leading-relaxed text-muted-foreground">
-          {`Setpoints are limited to the slider's range, which starts at the ±${DEFAULT_FLYWHEEL_MAX_RPM} RPM safety default. Click either end to change it.`}
+          {`Setpoints are limited to the slider’s range, which starts at the ±${DEFAULT_FLYWHEEL_MAX_RPM} RPM safety default. Select either end to change it.`}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" className="short:h-10 short:px-3.5" onClick={() => send(0)}>
@@ -386,7 +402,13 @@ function VelocityControl() {
         clamp={clampRpm}
         write={writeVelocity}
       />
-      {error && <Notice tone="warn">{error}</Notice>}
+      <LiveRegion>
+        {error && (
+          <Notice tone="warn" live={false}>
+            {error}
+          </Notice>
+        )}
+      </LiveRegion>
     </>
   )
 }
@@ -483,8 +505,11 @@ function SliderRow({
           }}
         />
         <label htmlFor={switchId} className="flex items-center gap-2 font-sans">
-          <Switch id={switchId} size="sm" checked={follow} onCheckedChange={setFollow} />
-          {follow ? "Following slider" : "Follow slider (otherwise sends on release)"}
+          <Switch id={switchId} size="sm" checked={follow} onCheckedChange={setFollow} aria-describedby={`${switchId}-hint`} />
+          Follow slider
+          <span id={`${switchId}-hint`} className="sr-only">
+            Off, the setpoint is sent when you let go of the slider.
+          </span>
         </label>
         <EditableBound
           label="Slider maximum"
@@ -506,12 +531,11 @@ function SliderRow({
           }}
         />
       </div>
-      {(minNote || maxNote) && (
-        <div role="status" className="flex flex-col gap-0.5 text-xs leading-relaxed text-hazard">
-          {minNote && <p>{minNote}</p>}
-          {maxNote && <p>{maxNote}</p>}
-        </div>
-      )}
+      {/* Always on the page, so a note that appears in it is announced. */}
+      <div role="status" className={cn("flex flex-col gap-0.5 text-xs leading-relaxed text-hazard-text", !minNote && !maxNote && "hidden")}>
+        {minNote && <p>{minNote}</p>}
+        {maxNote && <p>{maxNote}</p>}
+      </div>
       {(bounds ? bounds.changed : customMin !== null || customMax !== null) && (
         <button
           type="button"
@@ -555,9 +579,13 @@ export function EditableBound({
   const [draft, setDraft] = useState("")
   const [note, setNote] = useState<string | null>(null)
   const cancelled = useRef(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const noteId = useId()
 
   const commit = () => {
     setEditing(false)
+    // The input goes away, so focus goes back to the value it edited rather than to the page.
+    requestAnimationFrame(() => buttonRef.current?.focus())
     if (cancelled.current) {
       cancelled.current = false
       return
@@ -580,7 +608,8 @@ export function EditableBound({
           type="number"
           step={step}
           autoFocus
-          className="w-24 rounded-sm border border-ring bg-background px-1.5 py-0.5 font-mono text-xs text-foreground outline-none"
+          aria-describedby={noteId}
+          className="w-24 rounded-sm border border-focus-ring bg-background px-1.5 py-0.5 font-mono text-base text-foreground outline-none sm:text-xs"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={(e) => e.target.select()}
@@ -599,9 +628,11 @@ export function EditableBound({
       ) : (
         <button
           type="button"
-          title="Click to edit"
-          aria-label={`${label}: ${format(value)}. Click to edit.`}
-          className="rounded-sm border border-dashed border-transparent px-1.5 py-0.5 hover:border-border hover:text-foreground focus-visible:border-ring focus-visible:outline-none"
+          ref={buttonRef}
+          title="Select to edit"
+          aria-label={`${label}: ${format(value)}. Select to edit.`}
+          aria-describedby={note ? noteId : undefined}
+          className="rounded-sm border border-dashed border-transparent px-1.5 py-0.5 hover:border-border hover:text-foreground focus-visible:border-focus-ring focus-visible:outline-none"
           onClick={() => {
             setDraft(value.toFixed(digits))
             setNote(null)
@@ -611,11 +642,9 @@ export function EditableBound({
           {format(value)}
         </button>
       )}
-      {note && (
-        <span role="status" className="pointer-events-none absolute top-full mt-1 whitespace-nowrap font-sans text-hazard">
-          {note}
-        </span>
-      )}
+      <span id={noteId} role="status" className="pointer-events-none absolute top-full mt-1 whitespace-nowrap font-sans text-hazard-text">
+        {note}
+      </span>
     </div>
   )
 }

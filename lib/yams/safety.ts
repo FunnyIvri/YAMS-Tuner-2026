@@ -51,14 +51,14 @@ export function needsRangeVerification(kind: MechanismKind, continuous: boolean)
 
 export const PRE_MOTION_CHECKLIST: Record<"positional" | "continuous" | "flywheel", string[]> = {
   positional: [
-    "Everyone is clear of the mechanism's full path of travel, including pinch points.",
+    "Everyone is clear of the mechanism’s full path of travel, including pinch points.",
     "Nothing (tools, game pieces, wiring, bumpers) is inside the range of motion.",
     "Someone is at the Driver Station with a hand over Enter (disable) and Space (E-stop).",
     "The mechanism can be stopped by disabling: no stored energy (springs, surgical tubing, pressurized pneumatics) will move it unsafely.",
   ],
   continuous: [
     "The pivot can rotate a full turn in both directions without wrapping or pinching wiring.",
-    "Everyone is clear of the pivot's swept area.",
+    "Everyone is clear of the pivot’s swept area.",
     "Someone is at the Driver Station with a hand over Enter (disable) and Space (E-stop).",
   ],
   flywheel: [

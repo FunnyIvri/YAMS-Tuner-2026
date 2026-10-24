@@ -47,7 +47,7 @@ export function MechanismPanel({ onContinue }: { onContinue: () => void }) {
     <Panel
       step={1}
       title="Mechanism"
-      description="Pick the YAMS mechanism and the subsystem's Live Tuning command. Changing anything here resets every safety confirmation."
+      description="Pick the YAMS mechanism and the subsystem’s Live Tuning command. Changing anything here resets every safety confirmation."
       locked={status !== "connected" ? "Connect to a robot or simulation, or start the demo, to discover YAMS mechanisms." : null}
     >
       <div className="grid gap-4 sm:grid-cols-2">

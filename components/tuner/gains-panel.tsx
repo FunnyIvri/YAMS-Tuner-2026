@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react"
 import { Input } from "@/components/ui/input"
 import { useAxisValues, useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
-import { CardTabs, Panel } from "@/components/tuner/panel"
+import { CardTabPanel, CardTabs, Panel } from "@/components/tuner/panel"
 import { CurrentTripField } from "@/components/tuner/safety-checklist"
 import { useValueHistory } from "@/components/tuner/value-history"
 import { VoltageSettingsPanel, useLiveTune } from "@/components/tuner/voltage-drive"
@@ -70,46 +70,42 @@ export function GainsPanel() {
   return (
     <Panel
       title="Settings"
-      description="Gains and Limits are the robot's own values. Tuner and Voltage only change this tuner. Changes apply when you press Enter or click away; Esc cancels."
+      description="Gains and Limits are the robot’s own values. Tuner and Voltage only change this tuner. Changes apply when you press Enter or click away; Esc cancels."
       locked={status !== "connected" || !mechanismName ? "Choose a mechanism to edit its gains." : null}
     >
       <CardTabs label="Robot or tuner settings" tabs={tabs} value={tab} onChange={setTab} />
-      <p
-        className={cn(
-          "rounded-sm border-l-2 px-2 py-1 text-xs leading-relaxed",
-          ROBOT_TABS.includes(tab) ? "border-primary text-foreground" : "border-primary text-muted-foreground",
-        )}
-      >
-        {ROBOT_TABS.includes(tab)
-          ? "On the robot: sent to it under /Tuning."
-          : tab === "voltage"
-            ? "Only in this tuner: nothing on this tab is sent to the robot, except Set kG to this."
-            : "Only in this tuner: nothing on this tab is sent to the robot."}
-      </p>
-      {tab === "voltage" ? (
-        <VoltageSettingsPanel />
-      ) : tab === "gains" ? (
-        gains.length > 0 ? (
-          gains
-        ) : (
-          <p className="text-sm text-muted-foreground">This mechanism publishes no tunable gains.</p>
-        )
-      ) : tab === "tuner" ? (
-        <>
-          <GainGroup label="Stator fault">
+      <CardTabPanel label="Robot or tuner settings" value={tab}>
+        <p className="rounded-sm border-s-2 border-primary px-2 py-1 text-xs leading-relaxed text-foreground">
+          {ROBOT_TABS.includes(tab)
+            ? "On the robot: sent to it under /Tuning."
+            : tab === "voltage"
+              ? "Only in this tuner: nothing on this tab is sent to the robot, except Set kG to this."
+              : "Only in this tuner: nothing on this tab is sent to the robot."}
+        </p>
+        {tab === "voltage" ? (
+          <VoltageSettingsPanel />
+        ) : tab === "gains" ? (
+          gains.length > 0 ? (
+            gains
+          ) : (
+            <p className="text-sm text-muted-foreground">This mechanism publishes no tunable gains.</p>
+          )
+        ) : tab === "tuner" ? (
+          <>
+            {/* The field's own label names it, so no group heading above it. */}
             <div className="sm:w-1/2">
               <CurrentTripField />
             </div>
-          </GainGroup>
-          {positional && requiresRangeVerification && <RangeOfMotion />}
-        </>
-      ) : (
-        <>
-          {group("current", "Current limits")}
-          {softLimits && <SoftLimits lowerTopic={softLimits.lowerLimitTopic} upperTopic={softLimits.upperLimitTopic} />}
-          {group("ramp", "Ramp rate")}
-        </>
-      )}
+            {positional && requiresRangeVerification && <RangeOfMotion />}
+          </>
+        ) : (
+          <>
+            {group("current", "Current limits")}
+            {softLimits && <SoftLimits lowerTopic={softLimits.lowerLimitTopic} upperTopic={softLimits.upperLimitTopic} />}
+            {group("ramp", "Ramp rate")}
+          </>
+        )}
+      </CardTabPanel>
     </Panel>
   )
 }
@@ -121,7 +117,7 @@ function WasButton({ label, text, depth, onClick }: { label: string; text: strin
       type="button"
       onClick={onClick}
       title={`Restore ${label} to ${text}${depth > 1 ? `. ${depth - 1} earlier ${depth === 2 ? "value" : "values"} before that` : ""}`}
-      className="self-start rounded-sm font-mono text-[11px] leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="self-start rounded-sm font-mono text-xs leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
     >
       {`was ${text}`}
       {depth > 1 && <span className="opacity-60">{` (${depth})`}</span>}
@@ -132,7 +128,7 @@ function WasButton({ label, text, depth, onClick }: { label: string; text: strin
 function GainGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
+      <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</h3>
       {children}
     </div>
   )
@@ -273,11 +269,11 @@ function RangeInput({
         }}
       />
       {error && (
-        <p id={`${id}-error`} className="text-xs leading-snug text-destructive">
+        <p id={`${id}-error`} className="text-xs leading-snug text-destructive-text">
           {error}
         </p>
       )}
-      {warning && !error && <p className="text-xs leading-snug text-hazard">{warning}</p>}
+      {warning && !error && <p className="text-xs leading-snug text-hazard-text">{warning}</p>}
       {history.last !== null && (
         <WasButton
           label={`the ${label.toLowerCase()} end`}
@@ -328,8 +324,8 @@ function SoftLimits({ lowerTopic, upperTopic }: { lowerTopic: string; upperTopic
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
         {verifiedRange
-          ? "The robot won't drive past these. Live Tuning still stops if the mechanism leaves the range of motion above."
-          : "The robot won't drive past these. The lower limit must be below the upper one."}
+          ? "The robot won’t drive past these. Live Tuning still stops if the mechanism leaves the range of motion on the Tuner tab."
+          : "The robot won’t drive past these. The lower limit must be below the upper one."}
       </p>
     </GainGroup>
   )
@@ -477,7 +473,7 @@ function WireValueEditor({
         id={id}
         onClick={() => setDraft(String(Number(value.toPrecision(6))))}
         title={`Edit ${label} directly in ${wireLabel}`}
-        className="self-start rounded-sm font-mono text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="self-start rounded-sm font-mono text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         {`= ${pretty} ${wireLabel}`}
       </button>
@@ -493,7 +489,7 @@ function WireValueEditor({
         step="any"
         aria-label={`${label} in ${wireLabel}`}
         aria-invalid={invalid}
-        className="h-6 w-24 px-1.5 font-mono text-xs border-hazard"
+        className="h-8 w-24 px-1.5 font-mono text-base border-hazard sm:h-6 sm:text-xs"
         value={draft}
         onChange={(e) => {
           setDraft(e.target.value)

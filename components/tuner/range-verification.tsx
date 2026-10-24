@@ -36,7 +36,7 @@ export function RangeVerification() {
   } = useTuner()
   if (requiresRangeVerification && rangeSkipped) {
     return (
-      <Panel step={4} title="Range of motion" description="Verification was skipped. Only the robot's soft limits, if configured, bound travel.">
+      <Panel step={4} title="Range of motion" description="Verification was skipped. Only the robot’s soft limits, if configured, bound travel.">
         <Notice tone="danger">
           Range of motion is NOT verified. Nothing in this tool will stop the mechanism before a hard stop unless the robot has soft limits.
         </Notice>
@@ -88,32 +88,32 @@ function SkipRangeDialog() {
   }
   return (
     <AlertDialog onOpenChange={(open) => !open && setAgreed(false)}>
-      <AlertDialogTrigger render={<Button variant="ghost" className="ml-auto text-destructive hover:text-destructive" />}>
+      <AlertDialogTrigger render={<Button variant="ghost" className="ms-auto text-destructive-text hover:text-destructive-text" />}>
         <SkipForward data-icon="inline-start" />
         Skip verification
       </AlertDialogTrigger>
-      <AlertDialogContent className="border-l-[3px] border-l-destructive">
+      <AlertDialogContent className="border-s-[3px] border-s-destructive">
         <AlertDialogCancel
           variant="ghost"
           size="icon"
-          aria-label="Close"
-          className="absolute top-2 right-2 z-10"
+          aria-label="Close dialog"
+          className="absolute top-2 end-2 z-10"
         >
           <X />
         </AlertDialogCancel>
-        <AlertDialogHeader className="pr-8">
+        <AlertDialogHeader className="pe-8">
           <AlertDialogTitle className="flex items-center gap-2">
-            <TriangleAlert className="size-5 shrink-0 text-destructive" aria-hidden />
+            <TriangleAlert className="size-5 shrink-0 text-destructive-text" aria-hidden />
             Skip range-of-motion verification?
           </AlertDialogTitle>
-          <AlertDialogDescription render={<div />} className="flex flex-col gap-2 text-left">
-            <p>Without a verified range, this tool cannot keep setpoints inside the mechanism&apos;s real travel. If you continue:</p>
-            <ul className="flex list-disc flex-col gap-1 pl-5">
+          <AlertDialogDescription render={<div />} className="flex flex-col gap-2 text-start">
+            <p>Without a verified range, this tool cannot keep setpoints inside the mechanism’s real travel. If you continue:</p>
+            <ul className="flex list-disc flex-col gap-1 ps-5">
               <li>Setpoints can drive the mechanism into hard stops, frame members or other mechanisms at full closed-loop effort.</li>
               <li>A wrong motor or encoder inversion will not be caught before the mechanism runs away.</li>
               <li>
                 {lowerLimitSet
-                  ? "Travel is only bounded by the robot's soft limits, which have not been checked against the real mechanism."
+                  ? "Travel is only bounded by the robot’s soft limits, which have not been checked against the real mechanism."
                   : "The robot publishes no soft limits, so travel is not bounded at all."}
               </li>
               <li>Damaged gearboxes, belts, wiring and injuries are possible. Keep a hand on the Driver Station disable.</li>
@@ -122,7 +122,7 @@ function SkipRangeDialog() {
         </AlertDialogHeader>
         <label className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm leading-relaxed">
           <Checkbox checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} className="mt-0.5" />
-          I understand the risks and take responsibility for the mechanism&apos;s travel.
+          I understand the risks and take responsibility for the mechanism’s travel.
         </label>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>

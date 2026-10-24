@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { useAxisValues, useNtValue, useTuner } from "@/components/tuner/tuner-context"
-import { Notice } from "@/components/tuner/panel"
+import { Kbd, LiveRegion, Notice, Segmented } from "@/components/tuner/panel"
 import { TravelGauge } from "@/components/tuner/travel-gauge"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, yamsTopics } from "@/lib/yams/topics"
+import { formatVolts } from "@/lib/format"
 import { jogParams } from "@/lib/yams/safety"
 
 type Dir = -1 | 1
@@ -86,7 +87,6 @@ export function useLiveTune(): LiveTuneApi {
   return api
 }
 
-const formatVolts = (v: number) => `${v.toFixed(2)} V`
 
 /** The voltage that holds an elevator up, or an arm at an angle (0° is level), when a gravity hold voltage is set. */
 function holdVolts(kind: string, gravity: number, pos: number | undefined) {
@@ -98,7 +98,7 @@ function holdVolts(kind: string, gravity: number, pos: number | undefined) {
 /**
  * The Live tune card's Voltage tab. Drives the mechanism with voltage while a button is held, like finding the range of
  * motion but with nothing to mark. It stops at the ends of the verified range (or the soft limits). During Live Tuning,
- * letting go hands back to the closed loop, which holds where it stopped. Otherwise the motor gets 0 V (or the gravity
+ * letting go hands back to the closed loop, which holds where it stopped. Otherwise the motor gets 0 V (or the gravity
  * hold voltage) between presses. The settings are in the Settings card's Voltage tab.
  */
 export function VoltageDrive() {
@@ -353,6 +353,16 @@ export function VoltageDrive() {
     onPointerUp: () => releaseDrive(),
     onPointerCancel: () => releaseDrive(),
     onLostPointerCapture: () => releaseDrive(),
+    // From the keyboard, holding Enter drives and letting go stops. Space stays the stop key.
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.repeat) {
+        e.preventDefault()
+        beginDrive(dir)
+      }
+    },
+    onKeyUp: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") releaseDrive()
+    },
     onBlur: () => {
       if (driving === dir) releaseDrive()
     },
@@ -368,7 +378,7 @@ export function VoltageDrive() {
           ? `Hold a button to move the mechanism with voltage. It stops at the ends of the ${boundLabel}.`
           : "Hold a button to move the mechanism with voltage."}
       </p>
-      {!supported && <Notice tone="warn">This YAMS version can&apos;t drive with voltage. Update YAMS on the robot.</Notice>}
+      {!supported && <Notice tone="warn">This YAMS version can’t drive with voltage. Update YAMS on the robot.</Notice>}
       {positional && (
         <TravelGauge
           axis={axis}
@@ -381,12 +391,12 @@ export function VoltageDrive() {
       )}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" {...holdProps(-1)} className={holdClass} data-active={driving === -1}>
-          <ChevronLeft className="size-5" aria-hidden />
+          <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
           {`Hold: drive ${negLabel} (−${formatVolts(settings.volts)})`}
         </button>
         <button type="button" {...holdProps(1)} className={holdClass} data-active={driving === 1}>
           {`Hold: drive ${posLabel} (+${formatVolts(settings.volts)})`}
-          <ChevronRight className="size-5" aria-hidden />
+          <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
         </button>
       </div>
       <p className="font-mono text-sm tabular" aria-live="off">
@@ -409,14 +419,14 @@ export function VoltageDrive() {
       {session === "jog" && (
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => stop("Voltage control stopped")}>
-            Done
+            Stop voltage control
           </Button>
           <p className="text-sm text-muted-foreground">
             {flywheel
-              ? "Between presses the motor gets 0 V and the flywheel coasts."
+              ? "Between presses the motor gets 0 V and the flywheel coasts."
               : settings.gravityVolts !== 0
                 ? "Between presses the motor gets the gravity hold voltage."
-                : "Between presses the motor gets 0 V, so gravity can move it. Set a gravity hold voltage, or start Live Tuning to hold it with the closed loop."}
+                : "Between presses the motor gets 0 V, so gravity can move it. Set a gravity hold voltage, or start Live Tuning to hold it with the closed loop."}
           </p>
         </div>
       )}
@@ -426,28 +436,34 @@ export function VoltageDrive() {
             id="stay-in-voltage"
             checked={settings.stayInVoltage}
             onCheckedChange={(v) => update({ stayInVoltage: v === true })}
+            aria-describedby="stay-in-voltage-hint"
             className="mt-0.5"
           />
-          <label htmlFor="stay-in-voltage" className="flex flex-col gap-0.5 text-sm">
-            <span className="font-medium">Stay in voltage control</span>
-            <span className="text-muted-foreground">
+          <div className="flex flex-col gap-0.5 text-sm">
+            <label htmlFor="stay-in-voltage" className="font-medium">
+              Stay in voltage control
+            </label>
+            <span id="stay-in-voltage-hint" className="text-muted-foreground">
               {settings.stayInVoltage
                 ? `During Live Tuning, letting go keeps voltage control at ${
-                    settings.gravityVolts !== 0 && !flywheel ? "the gravity hold voltage" : "0 V"
+                    settings.gravityVolts !== 0 && !flywheel ? "the gravity hold voltage" : "0 V"
                   }. Going back to Setpoints, or turning this off, hands back to the closed loop${flywheel ? " at the setpoint it had" : ", which holds where the mechanism is"}.`
                 : flywheel
                   ? "Letting go hands back to Live Tuning at the setpoint it had."
                   : "Letting go hands back to Live Tuning, which holds where it stopped."}
             </span>
-          </label>
+          </div>
         </div>
       )}
       {session === "tune" && held && (
-        <p className="font-mono text-xs uppercase tracking-wide text-hazard">In voltage control. The closed loop is off.</p>
+        <p className="font-mono text-xs uppercase tracking-wider text-hazard-text">In voltage control. The closed loop is off.</p>
       )}
-      {note && <Notice>{note}</Notice>}
-      {error && <Notice tone="danger">{error}</Notice>}
-      <p className="text-xs text-muted-foreground">Change the voltage and how it ramps in the Settings card&apos;s Voltage tab. Space stops everything.</p>
+      <LiveRegion>{note && <Notice live={false}>{note}</Notice>}</LiveRegion>
+      <LiveRegion assertive>{error && <Notice tone="danger" live={false}>{error}</Notice>}</LiveRegion>
+      <p className="text-xs text-muted-foreground">
+        Hold <Kbd>Enter</Kbd> on a drive button to drive from the keyboard. Change the voltage and how it ramps in the
+        Settings card’s Voltage tab. Space stops everything.
+      </p>
     </>
   )
 }
@@ -529,25 +545,12 @@ export function VoltageSettingsPanel() {
       </Group>
 
       <Group label="When a drive button is released">
-        <div role="radiogroup" aria-label="When a drive button is released" className="grid grid-cols-2 gap-1 rounded-md border border-border p-1">
-          {(
-            [
-              ["cut", "Cut to 0 V"],
-              ["ramp", "Ramp to 0 V"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={release === value}
-              onClick={() => update({ release: value })}
-              className="rounded px-3 py-1.5 text-sm font-medium text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="When a drive button is released"
+          options={[["cut", "Cut to 0 V"], ["ramp", "Ramp to 0 V"]] as const}
+          value={release}
+          onChange={(v) => update({ release: v })}
+        />
         {release === "ramp" && (
           <>
             <NumberField
@@ -633,7 +636,7 @@ const clampGravity = (v: number) => Math.max(-MAX_GRAVITY_VOLTS, Math.min(MAX_GR
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
+      <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</h3>
       {children}
     </div>
   )

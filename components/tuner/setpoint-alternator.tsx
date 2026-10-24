@@ -103,7 +103,7 @@ export function SetpointAlternator({ id, active, unit, step, defaultA, defaultB,
           <div key={label} className="flex flex-col gap-1">
             <label htmlFor={`${id}-${label}`} className="flex items-center gap-2 text-xs text-muted-foreground">
               {`Setpoint ${label} (${unit})`}
-              {running && current && <span className="font-mono text-primary">{`active · ${remaining}s`}</span>}
+              {running && current && <span className="font-mono text-primary-text">{`active · ${remaining}s`}</span>}
             </label>
             <Input
               id={`${id}-${label}`}

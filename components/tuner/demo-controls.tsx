@@ -35,7 +35,7 @@ function DemoBar({ robot }: { robot: DemoRobot }) {
   return (
     <div className="border-b border-border bg-muted/40">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm">
-        <p className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wide">
+        <p className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider">
           <FlaskConical className="size-4" aria-hidden />
           Demo robot
         </p>
@@ -75,7 +75,7 @@ function DemoBar({ robot }: { robot: DemoRobot }) {
           ))}
         </div>
 
-        <Button type="button" size="sm" variant="outline" className="ml-auto" onClick={() => robot.reset()}>
+        <Button type="button" size="sm" variant="outline" className="ms-auto" onClick={() => robot.reset()}>
           <RotateCcw data-icon="inline-start" />
           Reset robot
         </Button>

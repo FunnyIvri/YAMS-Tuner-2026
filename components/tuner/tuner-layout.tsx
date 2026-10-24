@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type Ref } from "react"
 import { Check } from "lucide-react"
 import { useTuner } from "@/components/tuner/tuner-context"
 import { MechanismPanel } from "@/components/tuner/mechanism-panel"
@@ -50,12 +50,21 @@ export function TunerLayout() {
   const [viewing, setViewing] = useState<Stage | null>(null)
   const shown = viewing !== null && indexOf(viewing) < indexOf(stage) ? viewing : stage
   const busy = session !== null || starting
-  const top = useRef<HTMLDivElement>(null)
+  const top = useRef<HTMLElement>(null)
+  const column = useRef<HTMLDivElement>(null)
+  const first = useRef(true)
 
-  // A new step starts at the top of the column, not wherever the last one was scrolled to.
+  // A new step starts at its title, not wherever the last one was scrolled to: focus moves to the title, so keyboard
+  // and screen-reader users land on the new step, and the page scrolls back up to the steps.
   useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    column.current?.querySelector<HTMLElement>("h2[data-step-heading]")?.focus({ preventScroll: true })
     const el = top.current
-    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start", behavior: "smooth" })
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" })
   }, [shown])
 
   const back = () => setViewing(null)
@@ -76,61 +85,98 @@ export function TunerLayout() {
         </ValueHistoryProvider>
       </LiveTuneProvider>
     )
+  const tuning = shown === "tune"
+
+  const cardColumn = (
+    <div
+      key="cards"
+      ref={column}
+      className="flex flex-col gap-4 lg:col-start-1 lg:row-start-2 short:col-start-2 short:row-start-2"
+    >
+      {cards}
+    </div>
+  )
+  const telemetry = (
+    <div
+      key="telemetry"
+      className="flex flex-col gap-4 lg:sticky lg:top-20 lg:col-start-2 lg:row-start-2 lg:self-start short:sticky short:top-14 short:col-start-1 short:row-start-2 short:h-[calc(100dvh-5.5rem)] short:self-start short:overflow-y-auto"
+    >
+      <TelemetryPanel />
+    </div>
+  )
 
   return (
     <main className="mx-auto grid w-full max-w-7xl flex-1 content-start gap-4 px-4 pt-6 pb-8 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
-      <div ref={top} className="flex scroll-mt-24 flex-col gap-4 short:col-start-2 short:row-start-1">
-        <Progress stage={stage} shown={shown} busy={busy} onOpen={(s) => setViewing(s === stage ? null : s)} />
-        {cards}
-      </div>
-      <div
-        className={cn(
-          "flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start short:sticky short:top-14 short:col-start-1 short:row-start-1 short:h-[calc(100dvh-5.5rem)] short:self-start",
-          // On a phone held upright, the graph sits above the controls while tuning, and below the setup steps.
-          shown === "tune" && "order-first lg:order-none short:order-none",
-        )}
-      >
-        <TelemetryPanel />
-      </div>
+      {/* The steps come first at every width, across both columns. */}
+      <Progress
+        ref={top}
+        stage={stage}
+        shown={shown}
+        busy={busy}
+        onOpen={(s) => setViewing(s === stage ? null : s)}
+      />
+      {/* On a phone held upright the graph sits above the controls while tuning, and below the setup steps. It is
+          placed first in the page, not just drawn first, so the reading order matches what is on screen. */}
+      {tuning ? [telemetry, cardColumn] : [cardColumn, telemetry]}
     </main>
   )
 }
 
 /** Where you are in setup. Finished steps can be opened again while nothing is running. */
-function Progress({ stage, shown, busy, onOpen }: { stage: Stage; shown: Stage; busy: boolean; onOpen: (s: Stage) => void }) {
+function Progress({
+  ref,
+  stage,
+  shown,
+  busy,
+  onOpen,
+}: {
+  ref: Ref<HTMLElement>
+  stage: Stage
+  shown: Stage
+  busy: boolean
+  onOpen: (s: Stage) => void
+}) {
   const { mechanismName } = useTuner()
   const current = indexOf(stage)
+  const open = indexOf(shown)
   return (
-    <nav aria-label="Setup steps">
+    <nav ref={ref} aria-label="Setup steps" className="flex scroll-mt-24 flex-col gap-1.5 lg:col-span-2 short:col-span-2">
       <ol className="grid grid-cols-5 gap-1">
         {STAGES.map(([key, label], i) => {
           const done = i < current
-          const open = key === shown
+          const isOpen = i === open
           return (
             <li key={key}>
               <button
                 type="button"
-                disabled={busy || i > current || open}
-                aria-current={open ? "step" : undefined}
-                title={key === "mechanism" && mechanismName ? mechanismName : undefined}
+                disabled={busy || i > current || isOpen}
+                aria-current={isOpen ? "step" : undefined}
+                aria-label={`${done ? "Done" : `Step ${i + 1}`}: ${label}${isOpen ? ", open" : ""}`}
+                title={key === "mechanism" && mechanismName ? `${label}: ${mechanismName}` : label}
                 onClick={() => onOpen(key)}
                 className={cn(
-                  "flex min-h-11 w-full flex-col items-start justify-center gap-0.5 rounded-sm border border-border bg-card px-2 py-1.5 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground",
+                  "flex min-h-11 w-full flex-col items-start justify-center gap-0.5 rounded-sm border border-border bg-card px-2 py-1.5 text-start font-mono text-xs uppercase tracking-wider text-muted-foreground",
                   "enabled:hover:border-foreground disabled:cursor-default",
-                  open && "border-primary text-foreground",
-                  i > current && "opacity-50",
+                  // The open step is thicker and filled, a step still to come is dashed, so neither relies on colour.
+                  isOpen && "border-2 border-primary-text bg-secondary text-foreground",
+                  i > current && "border-dashed",
                 )}
               >
-                <span className="flex items-center gap-1 font-bold">
-                  {done ? <Check className="size-3 text-primary" aria-hidden /> : <span aria-hidden>{i + 1}</span>}
-                  <span className="sr-only">{done ? "Done: " : `Step ${i + 1}: `}</span>
+                <span aria-hidden className="flex items-center gap-1 font-bold">
+                  {done ? <Check className="size-3.5 text-primary-text" strokeWidth={2.5} absoluteStrokeWidth /> : i + 1}
                 </span>
-                <span className="w-full truncate">{label}</span>
+                {/* Below sm the boxes are too narrow for words, so the open step is named underneath instead. */}
+                <span aria-hidden className="hidden w-full break-words leading-tight hyphens-auto sm:block">
+                  {label}
+                </span>
               </button>
             </li>
           )
         })}
       </ol>
+      <p aria-hidden className="font-mono text-xs uppercase tracking-wider text-muted-foreground sm:hidden">
+        {`Step ${open + 1} of ${STAGES.length} · ${STAGES[open][1]}`}
+      </p>
     </nav>
   )
 }

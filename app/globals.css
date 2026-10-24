@@ -28,6 +28,12 @@
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
+  --color-focus-ring: var(--focus-ring);
+  --color-primary-text: var(--primary-text);
+  --color-hazard-text: var(--hazard-text);
+  --color-destructive-text: var(--destructive-text);
+  --color-setpoint: var(--setpoint);
+  --color-primary-hover: var(--primary-hover);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
@@ -80,8 +86,20 @@
   --destructive: #cf3a2c;
   --destructive-foreground: #f7f7f8;
   --border: #c1c6cd;
-  --input: #c1c6cd;
+  /* Form-control edges: 3:1 against the card, unlike the dividers' border. */
+  --input: #80858b;
   --ring: #6bbf2d;
+  /* The fills above are mid-lightness and only pass as text on dark surfaces, so text and focus get their own
+     colours, at 4.5:1 (3:1 for the ring) on the light card and background. */
+  --focus-ring: #367700;
+  --primary-text: #367700;
+  --primary-hover: #78d037;
+  --hazard-text: #8b5e00;
+  --destructive-text: #af1209;
+  /* The setpoint is a target, not a fault, so it is drawn in sapphire rather than the danger red. */
+  --setpoint: #2d6fbf;
+  --selection: #589d25;
+  --selection-foreground: #ffffff;
   --sapphire: #2d6fbf;
   --spruce: #194825;
   --grid-line: rgba(139, 151, 163, 0.08);
@@ -118,7 +136,12 @@
   --destructive: #e0503f;
   --destructive-foreground: #17191c;
   --border: #454a54;
-  --input: #454a54;
+  --input: #717782;
+  --focus-ring: #6bbf2d;
+  --primary-text: #6bbf2d;
+  --hazard-text: #f2af29;
+  --destructive-text: #ff8775;
+  --setpoint: #6ea8ef;
   --chart-1: #e9edef;
   --chart-4: #a6a6a6;
   --chart-5: #454a54;
@@ -131,7 +154,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-focus-ring;
   }
   body {
     @apply text-foreground font-sans;
@@ -149,8 +172,18 @@
     letter-spacing: 0.01em;
   }
   ::selection {
-    background: #589d25;
-    color: #ffffff;
+    background: var(--selection);
+    color: var(--selection-foreground);
+  }
+  /* Keeps a focused or scrolled-to control clear of the sticky stop bar. */
+  html {
+    scroll-padding-top: 5rem;
+  }
+  /* Controls that draw their own pressed or selected state don't also get the system's grey tap flash. */
+  button,
+  [role="tab"],
+  [role="radio"] {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 

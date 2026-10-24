@@ -25,21 +25,32 @@ export function StopBar() {
       {active && <div aria-hidden className="hazard-stripes h-1.5" />}
       <div className={cn("transition-colors", active ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground")}>
         {/* On a touch screen in landscape the controls are on the right, so Stop goes on the left, away from Send. */}
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5 touch-landscape:flex-row-reverse short:px-3 short:py-1">
-          <div aria-live="polite" className="min-w-0 text-sm leading-relaxed">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 touch-landscape:flex-row-reverse short:px-3 short:py-1">
+          <div aria-live="polite" className="min-w-0 flex-1 basis-48 text-sm leading-relaxed">
             {active ? (
-              <p className="truncate">
-                <span className="font-mono font-semibold uppercase tracking-wide">
-                  {starting ? "Starting" : session === "verify" ? "Verifying range" : session === "jog" ? "Driving with voltage" : "Live tuning"}
+              // Wraps instead of cutting off: the mechanism and how to stop must stay readable at any width.
+              <p className="flex flex-wrap items-center gap-x-1 text-pretty">
+                <span className="font-mono font-semibold uppercase tracking-wider">
+                  {starting
+                    ? "Starting"
+                    : session === "verify"
+                      ? "Verifying range"
+                      : session === "voltage"
+                        ? "Checking inversions"
+                        : session === "jog"
+                          ? "Driving with voltage"
+                          : "Live tuning"}
                 </span>
-                <span className="opacity-80">{` · ${mechanismName ?? ""} · Press `}</span>
-                <Kbd>Space</Kbd>
-                <span className="opacity-80"> anywhere to stop</span>
+                <span className="min-w-0 break-words opacity-80">{`· ${mechanismName ?? ""} ·`}</span>
+                <span className="whitespace-nowrap opacity-80">
+                  Press <Kbd>Space</Kbd> anywhere to stop
+                </span>
               </p>
             ) : lastStop ? (
-              <p className={cn("flex items-center gap-2", lastStop.fault && "text-destructive")}>
-                <span className="font-mono text-xs font-semibold uppercase">{lastStop.fault ? "Fault stop" : "Stopped"}</span>
-                <span className="truncate">{lastStop.reason}</span>
+              <p className={cn("flex flex-wrap items-center gap-x-2 gap-y-1", lastStop.fault && "text-destructive-text")}>
+                <span className="font-mono text-xs font-semibold uppercase tracking-wider">{lastStop.fault ? "Fault stop" : "Stopped"}</span>
+                {/* The whole reason, on its own line on a phone: it's the one fact needed after a stop. */}
+                <span className="min-w-0 basis-full text-pretty sm:basis-auto">{lastStop.reason}</span>
                 {lastStop.cause === "overcurrent" && !currentAsWarning && (
                   <button
                     type="button"
@@ -47,7 +58,7 @@ export function StopBar() {
                       setCurrentAsWarning(true)
                       clearLastStop()
                     }}
-                    className="shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase hover:bg-destructive/15"
+                    className="shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider hover:bg-destructive/15"
                   >
                     Warn only from now on
                   </button>
@@ -55,8 +66,8 @@ export function StopBar() {
                 <button
                   type="button"
                   onClick={clearLastStop}
-                  className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-                  aria-label="Dismiss"
+                  className="rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Dismiss stop message"
                 >
                   <X className="size-4" />
                 </button>
@@ -65,7 +76,7 @@ export function StopBar() {
               <p className="text-muted-foreground">
                 {"Idle. "}
                 <Kbd>Space</Kbd>
-                {" stops Live Tuning at any time, from anywhere on this page."}
+                {" stops the mechanism at any time, from anywhere on this page."}
               </p>
             )}
           </div>
@@ -75,7 +86,7 @@ export function StopBar() {
             disabled={!active}
             className={cn(
               "flex h-11 shrink-0 items-center gap-2 rounded-md px-4 short:h-10 font-mono text-sm font-semibold uppercase tracking-wider transition-colors",
-              "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-3 focus-visible:ring-ring/50 outline-none",
+              "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-2 focus-visible:ring-focus-ring outline-none",
               "disabled:bg-muted disabled:text-muted-foreground",
             )}
           >
@@ -89,21 +100,21 @@ export function StopBar() {
         <div role="alert" className="bg-hazard text-hazard-foreground">
           <p className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-sm leading-relaxed">
             <TriangleAlert className="size-4 shrink-0" aria-hidden />
-            <span className="font-mono text-xs font-semibold uppercase">Sim warning</span>
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider">Sim warning</span>
             <span>{rangeWarning}</span>
           </p>
         </div>
       )}
       {active && currentWarning && (
         <div role="alert" className="bg-hazard text-hazard-foreground">
-          <p className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-sm leading-relaxed">
+          <p className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-2 text-sm leading-relaxed">
             <TriangleAlert className="size-4 shrink-0" aria-hidden />
-            <span className="font-mono text-xs font-semibold uppercase">Current warning</span>
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider">Current warning</span>
             <span>{currentWarning}</span>
             <button
               type="button"
               onClick={() => setCurrentAsWarning(false)}
-              className="ml-auto shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase"
+              className="ms-auto shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider"
             >
               Make it a fault again
             </button>

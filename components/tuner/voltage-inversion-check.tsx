@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { useAxisValues, useNtValue, useRobotState, useTuner } from "@/components/tuner/tuner-context"
-import { Notice, Panel } from "@/components/tuner/panel"
+import { LiveRegion, Notice, Panel } from "@/components/tuner/panel"
 import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, yamsTopics } from "@/lib/yams/topics"
+import { formatVolts } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { jogParams } from "@/lib/yams/safety"
 
 const DEFAULT_MIN_VOLTS = -1
@@ -167,7 +169,7 @@ function CheckBody() {
   // One direction is enough: if position follows the voltage one way, the inversions are right. Neither may go against it.
   const passed =
     (trials.positive === "with" || trials.negative === "with") && trials.positive !== "against" && trials.negative !== "against"
-  const format = (v: number) => `${v.toFixed(2)} V`
+  const format = formatVolts
   const [lowLabel, highLabel] = kind === "elevator" ? ["down", "up"] : ["reverse", "forward"]
 
   if (!supported) {
@@ -187,14 +189,14 @@ function CheckBody() {
   return (
     <>
       <div className="flex gap-3 rounded-md border border-destructive bg-destructive/10 p-3 text-sm leading-relaxed text-foreground">
-        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden />
+        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-destructive-text" aria-hidden />
         <div className="flex flex-col gap-1.5">
-          <p className="font-semibold text-destructive">Be very careful during this step.</p>
+          <p className="font-semibold text-destructive-text">Be very careful during this step.</p>
           <p>
-            Voltage runs the motor open loop, with no position control. If two motors drive the same mechanism and a follower&apos;s inversion is wrong, the
+            Voltage runs the motor open loop, with no position control. If two motors drive the same mechanism and a follower’s inversion is wrong, the
             motors fight each other and can bend or break the mechanism almost instantly.
           </p>
-          <ul className="flex list-disc flex-col gap-1 pl-5">
+          <ul className="flex list-disc flex-col gap-1 ps-5">
             <li>Start with a fraction of a volt and increase it slowly.</li>
             <li>Watch and listen. Grinding, a stalled mechanism or rising current means stop right away.</li>
             <li>Press Space, or disable from the Driver Station, at the first sign of trouble.</li>
@@ -213,7 +215,7 @@ function CheckBody() {
               <Play data-icon="inline-start" />
               Start voltage control
             </Button>
-            <Button variant="ghost" className="ml-auto" disabled={session !== null} onClick={() => setInversionCheck("skipped")}>
+            <Button variant="ghost" className="ms-auto" disabled={session !== null} onClick={() => setInversionCheck("skipped")}>
               <SkipForward data-icon="inline-start" />
               Skip (already checked)
             </Button>
@@ -223,7 +225,7 @@ function CheckBody() {
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">Applied voltage</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">Applied voltage</span>
             <span className="font-mono text-2xl tabular">{format(volts)}</span>
           </div>
           <Slider
@@ -265,7 +267,8 @@ function CheckBody() {
             />
             <label htmlFor={springId} className="flex items-center gap-2 font-sans">
               <Switch id={springId} size="sm" checked={springBack} onCheckedChange={setSpringBack} />
-              {springBack ? "Back to 0 V on release" : "Holds voltage on release"}
+              {/* One fixed label: the switch says whether it's on. */}
+              Back to 0{"\u00a0"}V on release
             </label>
             <EditableBound
               label="Maximum voltage"
@@ -309,7 +312,7 @@ function CheckBody() {
               Set 0 V
             </Button>
             <Button
-              className="ml-auto"
+              className="ms-auto"
               disabled={!passed}
               onClick={() => {
                 stop("Inversion check passed")
@@ -322,8 +325,19 @@ function CheckBody() {
         </div>
       )}
 
-      {warning && <Notice tone="warn">{warning}</Notice>}
-      {error && <Notice tone="danger">{error}</Notice>}
+      {/* Always on the page, so a wrong-direction warning that appears in it is announced at once. */}
+      <LiveRegion assertive>
+        {warning && (
+          <Notice tone="warn" live={false}>
+            {warning}
+          </Notice>
+        )}
+        {error && (
+          <Notice tone="danger" live={false}>
+            {error}
+          </Notice>
+        )}
+      </LiveRegion>
     </>
   )
 }
@@ -340,15 +354,19 @@ function VoltageEntry({
   onApply: (v: number) => void
 }) {
   const inputId = useId()
+  const noteId = useId()
   const [text, setText] = useState("")
   const [note, setNote] = useState<string | null>(null)
+  const [invalid, setInvalid] = useState(false)
 
   const apply = () => {
     const v = Number.parseFloat(text)
     if (text.trim() === "" || !Number.isFinite(v)) {
+      setInvalid(true)
       setNote("Enter a number of volts.")
       return
     }
+    setInvalid(false)
     const next = Math.min(max, Math.max(min, v))
     onApply(next)
     setText(next.toString())
@@ -357,7 +375,7 @@ function VoltageEntry({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={inputId} className="text-xs uppercase tracking-wide text-muted-foreground">
+      <label htmlFor={inputId} className="text-xs uppercase tracking-wider text-muted-foreground">
         Type a voltage
       </label>
       <div className="flex gap-2">
@@ -370,10 +388,13 @@ function VoltageEntry({
           max={max}
           placeholder={`${min} to ${max}`}
           value={text}
+          aria-invalid={invalid}
+          aria-describedby={noteId}
           className="font-mono tabular"
           onChange={(e) => {
             setText(e.target.value)
             setNote(null)
+            setInvalid(false)
           }}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return
@@ -385,7 +406,7 @@ function VoltageEntry({
           Apply
         </Button>
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
+      <p id={noteId} role="status" className={cn("text-xs leading-relaxed", invalid ? "text-destructive-text" : "text-muted-foreground")}>
         {note ?? `Press Enter or Apply to send it. Typed values hold until changed and stay within ${format(min)} to ${format(max)}.`}
       </p>
     </div>

@@ -32,7 +32,7 @@ function AlertDialogOverlay({
       // Inline as well as in classes, so the backdrop covers the page even where a class does not apply.
       style={{ position: "fixed", inset: 0, backgroundColor: "rgb(0 0 0 / 0.7)" }}
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/70 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-black/70 duration-100 motion-safe:supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -57,7 +57,7 @@ function AlertDialogContent({
         // browser: it can never sit wherever the page left it, such as next to the button that opened it.
         style={{ position: "fixed", inset: 0, margin: "auto", height: "fit-content", maxHeight: "calc(100% - 1rem)" }}
         className={cn(
-          "group/alert-dialog-content fixed inset-0 z-50 m-auto grid h-fit max-h-[calc(100%-1rem)] w-full overflow-y-auto overscroll-contain gap-4 rounded-sm border border-border bg-popover p-4 text-popover-foreground shadow-2xl duration-100 outline-none data-[size=default]:max-w-[calc(100vw-1rem)] data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-lg [@media(orientation:landscape)_and_(max-height:540px)]:data-[size=default]:max-w-lg data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "group/alert-dialog-content fixed inset-0 z-50 m-auto grid h-fit max-h-[calc(100%-1rem)] w-full overflow-y-auto overscroll-contain gap-4 rounded-sm border border-border bg-popover p-4 text-popover-foreground shadow-2xl duration-100 outline-none data-[size=default]:max-w-[calc(100vw-1rem)] data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-lg [@media(orientation:landscape)_and_(max-height:540px)]:data-[size=default]:max-w-lg data-open:animate-in data-open:fade-in-0 motion-safe:data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 motion-safe:data-closed:zoom-out-95",
           className
         )}
         {...props}

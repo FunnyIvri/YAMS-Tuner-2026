@@ -66,7 +66,7 @@ export function IpkDownload() {
         <Download data-icon="inline-start" />
         Download for SystemCore (.ipk)
       </Button>
-      <span className="text-center text-xs text-muted-foreground md:text-left" data-ipk="hint">
+      <span className="text-center text-xs text-muted-foreground md:text-start" data-ipk="hint">
         Install it by dragging the .ipk onto http://robot.local, then open the yams-tuner tile.
       </span>
     </div>

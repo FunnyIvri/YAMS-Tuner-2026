@@ -15,7 +15,7 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-border py-6 md:py-8">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 md:flex-row">
-        <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
+        <p className="text-center text-sm leading-loose text-muted-foreground md:text-start">
           Made with 💚 by nstrike, Rivet, and Yet Another Software Suite
         </p>
         <GitHubLink />

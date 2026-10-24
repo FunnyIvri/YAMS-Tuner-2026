@@ -1,3 +1,4 @@
+import { EMPTY, NBSP, num } from "@/lib/format"
 import type { LiveNT } from "@/lib/nt/live-nt"
 
 export type MechanismKind = "elevator" | "arm" | "pivot" | "flywheel"
@@ -225,11 +226,11 @@ export function velocityUnit(axis: Axis) {
 }
 
 export function formatPosition(value: number | undefined, axis: Axis) {
-  if (value === undefined) return "-"
-  return axis === "linear" ? `${value.toFixed(3)} m` : `${value.toFixed(1)}°`
+  if (value === undefined) return EMPTY
+  return axis === "linear" ? `${num(value, 3)}${NBSP}m` : `${num(value, 1)}°`
 }
 
 export function formatNumber(value: number | undefined, digits = 2) {
-  if (value === undefined) return "-"
-  return value.toFixed(digits)
+  if (value === undefined) return EMPTY
+  return num(value, digits)
 }
