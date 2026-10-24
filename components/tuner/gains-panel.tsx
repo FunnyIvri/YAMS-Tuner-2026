@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { useAxisValues, useNtValue, useNtVersion, useTuner } from "@/components/tuner/tuner-context"
 import { CardTabs, Panel } from "@/components/tuner/panel"
 import { CurrentTripField } from "@/components/tuner/safety-checklist"
+import { useValueHistory } from "@/components/tuner/value-history"
 import { VoltageSettingsPanel, useLiveTune } from "@/components/tuner/voltage-drive"
 import { GAIN_DEFS, axisReader, formatPosition, positionUnit, profileUnit, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
@@ -113,6 +114,21 @@ export function GainsPanel() {
   )
 }
 
+/** Steps back to the value before the last change. Each press goes one change further back. */
+function WasButton({ label, text, depth, onClick }: { label: string; text: string; depth: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Restore ${label} to ${text}${depth > 1 ? `. ${depth - 1} earlier ${depth === 2 ? "value" : "values"} before that` : ""}`}
+      className="self-start rounded-sm font-mono text-[11px] leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {`was ${text}`}
+      {depth > 1 && <span className="opacity-60">{` (${depth})`}</span>}
+    </button>
+  )
+}
+
 function GainGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
@@ -153,8 +169,8 @@ function RangeOfMotion() {
             label={side === "lower" ? "Lower" : "Upper"}
             unit={unit}
             digits={axis === "linear" ? 3 : 1}
+            historyKey={`range-${side}`}
             value={verified[side]}
-            was={start[side]}
             check={(v) => check(side, v)}
             warning={
               start[side] !== null && verified[side] !== null && (side === "lower" ? verified[side] < start[side] : verified[side] > start[side])
@@ -178,8 +194,8 @@ function RangeInput({
   label,
   unit,
   digits,
+  historyKey,
   value,
-  was,
   check,
   warning,
   onCommit,
@@ -188,8 +204,8 @@ function RangeInput({
   label: string
   unit: string
   digits: number
+  historyKey: string
   value: number | null
-  was: number | null
   check: (v: number) => string | null
   /** Shown under the field while the value is past what was verified. */
   warning: string | null
@@ -197,6 +213,14 @@ function RangeInput({
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const history = useValueHistory(historyKey, value, (v) => {
+    const problem = check(v)
+    if (problem) {
+      setError(problem)
+      return false
+    }
+    onCommit(v)
+  })
   const shown = draft ?? (value === null ? "" : value.toFixed(digits))
   const apply = (): boolean => {
     if (draft === null) return true
@@ -254,18 +278,16 @@ function RangeInput({
         </p>
       )}
       {warning && !error && <p className="text-xs leading-snug text-hazard">{warning}</p>}
-      {was !== null && value !== was && (
-        <button
-          type="button"
+      {history.last !== null && (
+        <WasButton
+          label={`the ${label.toLowerCase()} end`}
+          text={history.last.toFixed(digits)}
+          depth={history.depth}
           onClick={() => {
-            if (check(was) === null) onCommit(was)
             setDraft(null)
+            history.undo()
           }}
-          title={`Restore the ${label.toLowerCase()} end to the verified value`}
-          className="self-start rounded-sm font-mono text-[11px] leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {`was ${was.toFixed(digits)}`}
-        </button>
+        />
       )}
     </div>
   )
@@ -329,8 +351,7 @@ function GainInput({
   const value = useNtValue<number>(topic)
   const [draft, setDraft] = useState<string | null>(null)
   const [invalid, setInvalid] = useState(false)
-  const [startWire, setStartWire] = useState<number | null>(null)
-  if (startWire === null && typeof value === "number") setStartWire(value)
+  const history = useValueHistory(topic, value, (v) => nt.set(topic, v))
   const id = `gain-${def.key}`
   const toDisplay = (w: number) => (unit ? unit.fromWire(w) : w)
   const fmt = (n: number) => String(Number(n.toPrecision(6)))
@@ -338,11 +359,6 @@ function GainInput({
   const shown = draft ?? (displayValue !== null ? fmt(displayValue) : "")
   const hint = unit?.label ?? def.hint
   const converted = unit && unit.label !== unit.wireLabel
-  const changedFromStart =
-    startWire !== null &&
-    ((typeof value === "number" && fmt(toDisplay(value)) !== fmt(toDisplay(startWire))) ||
-      (draft !== null && draft.trim() !== "" && Number(draft) !== Number(fmt(toDisplay(startWire)))))
-
   const apply = (): boolean => {
     if (draft === null) return true
     const v = Number(draft)
@@ -393,19 +409,17 @@ function GainInput({
           }
         }}
       />
-      {changedFromStart && startWire !== null && (
-        <button
-          type="button"
+      {history.last !== null && (
+        <WasButton
+          label={def.label}
+          text={fmt(toDisplay(history.last))}
+          depth={history.depth}
           onClick={() => {
-            nt.set(topic, startWire)
             setDraft(null)
             setInvalid(false)
+            history.undo()
           }}
-          title={`Restore ${def.label} to its starting value`}
-          className="self-start rounded-sm font-mono text-[11px] leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {`was ${fmt(toDisplay(startWire))}`}
-        </button>
+        />
       )}
       {converted && typeof value === "number" && (
         <WireValueEditor

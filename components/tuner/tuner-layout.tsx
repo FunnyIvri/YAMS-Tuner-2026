@@ -10,6 +10,7 @@ import { RangeVerification } from "@/components/tuner/range-verification"
 import { SetpointPanel } from "@/components/tuner/setpoint-panel"
 import { GainsPanel } from "@/components/tuner/gains-panel"
 import { LiveTuneProvider } from "@/components/tuner/voltage-drive"
+import { ValueHistoryProvider } from "@/components/tuner/value-history"
 import { TelemetryPanel } from "@/components/tuner/telemetry-panel"
 import { cn } from "@/lib/utils"
 
@@ -69,8 +70,10 @@ export function TunerLayout() {
       <RangeVerification />
     ) : (
       <LiveTuneProvider key={`${mechanismName}|${kind}`}>
-        <SetpointPanel />
-        <GainsPanel />
+        <ValueHistoryProvider>
+          <SetpointPanel />
+          <GainsPanel />
+        </ValueHistoryProvider>
       </LiveTuneProvider>
     )
 
