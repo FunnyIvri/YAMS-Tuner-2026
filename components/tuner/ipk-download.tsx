@@ -48,7 +48,7 @@ export function IpkDownload() {
   }, [])
 
   return (
-    <div className="flex flex-col items-center gap-x-3 gap-y-1 md:flex-row">
+    <div className="flex flex-col items-center gap-x-3 gap-y-1 md:flex-row short:flex-col">
       <Button
         variant="outline"
         size="sm"
@@ -66,7 +66,7 @@ export function IpkDownload() {
         <Download data-icon="inline-start" />
         Download for SystemCore (.ipk)
       </Button>
-      <span className="text-center text-xs text-muted-foreground md:text-start" data-ipk="hint">
+      <span className="text-center text-xs text-muted-foreground md:text-start short:text-center" data-ipk="hint">
         Install it by dragging the .ipk onto http://robot.local, then open the yams-tuner tile.
       </span>
     </div>

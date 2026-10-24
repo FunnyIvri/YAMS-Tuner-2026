@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { OctagonX, TriangleAlert, X } from "lucide-react"
 import { useTuner } from "@/components/tuner/tuner-context"
 import { Kbd } from "@/components/tuner/panel"
@@ -19,9 +20,30 @@ export function StopBar() {
     setCurrentAsWarning,
   } = useTuner()
   const active = session !== null || starting
+  const bar = useRef<HTMLDivElement>(null)
+
+  // The bar's height, for what has to stay clear of it: the pinned telemetry and controls scrolled into view. While
+  // something runs, the bar is fixed to the top of the window and the page is padded down by the same height.
+  useEffect(() => {
+    const el = bar.current
+    if (!el) return
+    const root = document.documentElement.style
+    const measure = () => {
+      const h = `${el.offsetHeight}px`
+      root.setProperty("--stop-bar-h", h)
+      root.setProperty("--stop-bar-pad", active ? h : "0px")
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      root.setProperty("--stop-bar-pad", "0px")
+    }
+  }, [active])
 
   return (
-    <div className="sticky top-0 z-40 border-b border-border">
+    <div ref={bar} className={cn("z-40 border-b border-border", active ? "fixed inset-x-0 top-0" : "sticky top-0")}>
       {active && <div aria-hidden className="hazard-stripes h-1.5" />}
       <div className={cn("transition-colors", active ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground")}>
         {/* On a touch screen in landscape the controls are on the right, so Stop goes on the left, away from Send. */}

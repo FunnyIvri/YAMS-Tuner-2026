@@ -12,6 +12,7 @@ import { GainsPanel } from "@/components/tuner/gains-panel"
 import { LiveTuneProvider } from "@/components/tuner/voltage-drive"
 import { ValueHistoryProvider } from "@/components/tuner/value-history"
 import { TelemetryPanel } from "@/components/tuner/telemetry-panel"
+import { SiteFooter } from "@/components/tuner/site-footer"
 import { cn } from "@/lib/utils"
 
 const STAGES = [
@@ -64,7 +65,9 @@ export function TunerLayout() {
     column.current?.querySelector<HTMLElement>("h2[data-step-heading]")?.focus({ preventScroll: true })
     const el = top.current
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" })
+    // Under the stop bar counts as scrolled past.
+    const bar = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--stop-bar-h")) || 0
+    if (el && el.getBoundingClientRect().top < bar) el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" })
   }, [shown])
 
   const back = () => setViewing(null)
@@ -94,19 +97,22 @@ export function TunerLayout() {
       className="flex flex-col gap-4 lg:col-start-1 lg:row-start-2 short:col-start-2 short:row-start-2"
     >
       {cards}
+      {/* With the telemetry pinned on the left, a footer under both columns would push the graph up under the stop bar
+          at the bottom of the page. Here it ends the right-hand column instead. */}
+      <SiteFooter className="hidden short:block short:pt-4" />
     </div>
   )
   const telemetry = (
     <div
       key="telemetry"
-      className="flex flex-col gap-4 lg:sticky lg:top-20 lg:col-start-2 lg:row-start-2 lg:self-start short:sticky short:top-14 short:col-start-1 short:row-start-2 short:h-[calc(100dvh-5.5rem)] short:self-start short:overflow-y-auto"
+      className="flex flex-col gap-4 lg:sticky lg:top-[calc(var(--stop-bar-h,4.5rem)+0.75rem)] lg:col-start-2 lg:row-start-2 lg:self-start short:sticky short:top-[calc(var(--stop-bar-h,3.5rem)+0.25rem)] short:col-start-1 short:row-start-2 short:h-[calc(100dvh-var(--stop-bar-h,3.5rem)-0.5rem)] short:self-start short:overflow-y-auto"
     >
       <TelemetryPanel />
     </div>
   )
 
   return (
-    <main className="mx-auto grid w-full max-w-7xl flex-1 content-start gap-4 px-4 pt-6 pb-8 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
+    <main className="mx-auto grid w-full max-w-7xl flex-1 content-start gap-4 px-4 pt-6 pb-8 short:pb-1 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
       {/* The steps come first at every width, across both columns. */}
       <Progress
         ref={top}
@@ -140,7 +146,7 @@ function Progress({
   const current = indexOf(stage)
   const open = indexOf(shown)
   return (
-    <nav ref={ref} aria-label="Setup steps" className="flex scroll-mt-24 flex-col gap-1.5 lg:col-span-2 short:col-span-2">
+    <nav ref={ref} aria-label="Setup steps" className="flex scroll-mt-[calc(var(--stop-bar-h,4.5rem)+1rem)] flex-col gap-1.5 lg:col-span-2 short:col-span-2">
       <ol className="grid grid-cols-5 gap-1">
         {STAGES.map(([key, label], i) => {
           const done = i < current

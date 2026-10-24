@@ -175,9 +175,9 @@
     background: var(--selection);
     color: var(--selection-foreground);
   }
-  /* Keeps a focused or scrolled-to control clear of the sticky stop bar. */
+  /* Keeps a focused or scrolled-to control clear of the stop bar. */
   html {
-    scroll-padding-top: 5rem;
+    scroll-padding-top: calc(var(--stop-bar-h, 4rem) + 1rem);
   }
   /* Controls that draw their own pressed or selected state don't also get the system's grey tap flash. */
   button,
