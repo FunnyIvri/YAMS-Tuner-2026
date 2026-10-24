@@ -8,12 +8,16 @@ import { TunerLayout } from "@/components/tuner/tuner-layout"
 export default function Page() {
   return (
     <TunerProvider>
-      <ConnectionBar />
-      <DemoControls />
-      <div aria-hidden className="yass-stripe" />
-      <StopBar />
-      <TunerLayout />
-      <SiteFooter />
+      {/* At least a screen tall, with the main area taking the spare height: the footer sits at the bottom of the
+          screen when the page is short, and after the content when it is long. It is never fixed. */}
+      <div className="flex min-h-dvh flex-col">
+        <ConnectionBar />
+        <DemoControls />
+        <div aria-hidden className="yass-stripe" />
+        <StopBar />
+        <TunerLayout />
+        <SiteFooter />
+      </div>
     </TunerProvider>
   )
 }

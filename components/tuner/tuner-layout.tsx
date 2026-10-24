@@ -75,7 +75,7 @@ export function TunerLayout() {
     )
 
   return (
-    <main className="mx-auto grid max-w-7xl gap-4 px-4 pt-6 pb-8 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
+    <main className="mx-auto grid w-full max-w-7xl flex-1 content-start gap-4 px-4 pt-6 pb-8 lg:grid-cols-2 short:grid-cols-2 short:gap-3 short:px-3 short:pt-3">
       <div ref={top} className="flex scroll-mt-24 flex-col gap-4 short:col-start-2 short:row-start-1">
         <Progress stage={stage} shown={shown} busy={busy} onOpen={(s) => setViewing(s === stage ? null : s)} />
         {cards}
