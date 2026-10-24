@@ -58,7 +58,7 @@ export function StopBar() {
                       setCurrentAsWarning(true)
                       clearLastStop()
                     }}
-                    className="shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider hover:bg-destructive/15"
+                    className="shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider hover:bg-destructive/15 transition-[scale,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96]"
                   >
                     Warn only from now on
                   </button>
@@ -66,7 +66,7 @@ export function StopBar() {
                 <button
                   type="button"
                   onClick={clearLastStop}
-                  className="rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                  className="rounded-sm p-1 text-muted-foreground hover:text-foreground transition-[scale,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96]"
                   aria-label="Dismiss stop message"
                 >
                   <X className="size-4" />
@@ -85,7 +85,7 @@ export function StopBar() {
             onClick={() => stop("Stopped with the Stop button")}
             disabled={!active}
             className={cn(
-              "flex h-11 shrink-0 items-center gap-2 rounded-md px-4 short:h-10 font-mono text-sm font-semibold uppercase tracking-wider transition-colors",
+              "flex h-11 shrink-0 items-center gap-2 rounded-md px-4 short:h-10 font-mono text-sm font-semibold uppercase tracking-wider transition-[scale,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96]",
               "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-2 focus-visible:ring-focus-ring outline-none",
               "disabled:bg-muted disabled:text-muted-foreground",
             )}
@@ -114,7 +114,7 @@ export function StopBar() {
             <button
               type="button"
               onClick={() => setCurrentAsWarning(false)}
-              className="ms-auto shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider"
+              className="ms-auto shrink-0 rounded-sm border border-current px-2 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider transition-[scale,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96]"
             >
               Make it a fault again
             </button>

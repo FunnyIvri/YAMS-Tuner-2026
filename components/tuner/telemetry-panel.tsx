@@ -72,7 +72,7 @@ function MotorTemp({ celsius }: { celsius: number | undefined }) {
         onClick={toggle}
         title={fahrenheit ? "Show in Celsius" : "Show in Fahrenheit"}
         aria-label={`Motor temp ${value}. Switch to ${fahrenheit ? "Celsius" : "Fahrenheit"}`}
-        className="rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="rounded-sm underline decoration-dotted underline-offset-2 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         {value}
       </button>

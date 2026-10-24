@@ -117,7 +117,7 @@ function WasButton({ label, text, depth, onClick }: { label: string; text: strin
       type="button"
       onClick={onClick}
       title={`Restore ${label} to ${text}${depth > 1 ? `. ${depth - 1} earlier ${depth === 2 ? "value" : "values"} before that` : ""}`}
-      className="self-start rounded-sm font-mono text-xs leading-tight text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      className="self-start rounded-sm font-mono text-xs leading-tight text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
     >
       {`was ${text}`}
       {depth > 1 && <span className="opacity-60">{` (${depth})`}</span>}
@@ -473,7 +473,7 @@ function WireValueEditor({
         id={id}
         onClick={() => setDraft(String(Number(value.toPrecision(6))))}
         title={`Edit ${label} directly in ${wireLabel}`}
-        className="self-start rounded-sm font-mono text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="self-start rounded-sm font-mono text-xs text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         {`= ${pretty} ${wireLabel}`}
       </button>

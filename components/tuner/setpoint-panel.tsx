@@ -539,7 +539,7 @@ function SliderRow({
       {(bounds ? bounds.changed : customMin !== null || customMax !== null) && (
         <button
           type="button"
-          className="self-start font-sans text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          className="self-start font-sans text-xs text-muted-foreground underline underline-offset-2 transition-colors duration-150 hover:text-foreground"
           onClick={() => {
             setMinNote(null)
             setMaxNote(null)

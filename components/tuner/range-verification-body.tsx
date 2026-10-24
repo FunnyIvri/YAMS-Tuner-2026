@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { ChevronLeft, ChevronRight, Flag, Play } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, Crosshair, Flag, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
@@ -31,8 +31,6 @@ const DEFAULT_MAX_VOLTS = 1
 const HARD_LIMIT_VOLTS = 12
 /** Voltage ramps from 0 to the drive voltage over this long, so a press never slams the mechanism. */
 const RAMP_MS = 400
-/** Within this many reach tolerances of a defined end, the drive voltage is halved to limit overshoot. */
-const SLOW_ZONE_TOLERANCES = 8
 /** How fast the voltage ramps down to 0 after a drive button is released, in ramp mode, in volts per second. */
 const DEFAULT_RAMP_DOWN_VOLTS_PER_SECOND = 4
 const MIN_RAMP_DOWN_VOLTS_PER_SECOND = 0.01
@@ -338,12 +336,11 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     return () => clearInterval(id)
   }, [verifying, verifyHold, mechanismName, nt, axis, stop])
 
-  /** Drives toward an end with voltage. With a target it stops there and marks it; without one it runs until released. */
   /**
    * Drives toward an end. A button drives at the slider's end on that side and ramps up; the stick drives at a fraction
    * of it; the slider drives at its own voltage, read every loop, with no ramp since it is moved by hand.
    */
-  const beginDrive = (dir: Dir, target?: number, source: "button" | "stick" | "slider" = "button") => {
+  const beginDrive = (dir: Dir, source: "button" | "stick" | "slider" = "button") => {
     if (!verifying || !mechanismName || !supported) return
     const slid = sliderRef.current
     endDrive(false)
@@ -359,14 +356,6 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     if (startPos === undefined) return
     setNote(null)
     setError(null)
-    if (target !== undefined && (target - startPos) * dir <= params.reachTolerance) {
-      if (Math.abs(startPos - target) <= params.reachTolerance) {
-        if (markValue(sideOf(dir), target) === null) setNote({ tone: "info", text: `Already at the ${sideOf(dir)} end. Marked ${fmt(target)}.` })
-      } else {
-        setNote({ tone: "warn", text: `The mechanism is already past ${fmt(target)}. Drive the other way first.` })
-      }
-      return
-    }
 
     nt.set(t.tuning.setpointPosition, startPos)
     nt.set(t.tuning.voltageSetpoint, holdVoltsAt(startPos))
@@ -396,13 +385,6 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       }
       // Moving against the drive is not a fault here: the inversion check already proved the direction, and a falling
       // mechanism keeps falling for a moment after a drive up starts.
-      if (target !== undefined && (target - pos) * dir <= params.reachTolerance) {
-        endDrive()
-        if (markValue(sideOf(dir), target) === null) {
-          setNote({ tone: "info", text: `Reached the defined ${sideOf(dir)} end at ${fmt(target)} and marked it.` })
-        }
-        return
-      }
       // When over-current only warns, the session keeps running, so the drive itself treats it as the end of travel.
       const amps = reader.statorCurrent()
       if (currentAsWarning && amps !== undefined && Math.abs(amps) > stallCurrent) {
@@ -421,22 +403,18 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         if (markValue(sideOf(dir), softLimit) === null) {
           setNote({
             tone: "info",
-            text:
-              target !== undefined
-                ? `Stopped at the robot’s ${sideOf(dir)} soft limit (${fmt(softLimit)}) before reaching the defined end, and marked it as the ${sideOf(dir)} end.`
-                : `Reached the robot’s ${sideOf(dir)} soft limit and marked it as the ${sideOf(dir)} end (${fmt(softLimit)}).`,
+            text: `Reached the robot’s ${sideOf(dir)} soft limit and marked it as the ${sideOf(dir)} end (${fmt(softLimit)}).`,
           })
         }
         return
       }
 
       const ramp = source === "slider" ? 1 : Math.min(1, (now - startedAt) / RAMP_MS)
-      const nearTarget = target !== undefined && Math.abs(target - pos) <= params.reachTolerance * SLOW_ZONE_TOLERANCES
       // On top of the gravity hold voltage, so driving up and down feel the same and a press never jumps.
       // Below full voltage a mechanism may just not move, so the hard-stop check below waits for near full.
       const scale =
         source === "stick" ? stickScale.current : source === "slider" ? Math.min(1, Math.abs(sliderRef.current) / volts) : 1
-      const out = Math.round((holdVoltsAt(pos) + dir * volts * scale * ramp * (nearTarget ? 0.5 : 1)) * 1000) / 1000
+      const out = Math.round((holdVoltsAt(pos) + dir * volts * scale * ramp) * 1000) / 1000
       if (out !== sent) {
         sent = out
         sentVolts.current = out
@@ -454,9 +432,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           autoMark(
             dir,
             pos,
-            target !== undefined
-              ? `Stopped short of the defined end (${fmt(target)}) with no movement`
-              : `No movement at ${formatVolts(volts * scale)}, likely a hard stop`,
+            `No movement at ${formatVolts(volts * scale)}, likely a hard stop`,
           )
         }
       }
@@ -574,13 +550,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     const dir: Dir = v > 0 ? 1 : -1
     // Already driving this way with the slider: the loop reads the new voltage itself.
     if (sliding && driving === dir) return
-    const d = definedRef.current
-    if (d.mode === "define" && !d.ok) return
-    beginDrive(dir, d.mode === "define" ? (dir > 0 ? d.upper : d.lower) : undefined, "slider")
+    beginDrive(dir, "slider")
   }
   const releaseDriveRef = useRef(releaseDrive)
   releaseDriveRef.current = releaseDrive
-  const definedRef = useRef<{ mode: Mode; lower: number; upper: number; ok: boolean }>({ mode, lower: NaN, upper: NaN, ok: false })
   useEffect(() => {
     if (driveInput !== "controller") {
       setPad(null)
@@ -620,12 +593,10 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         waitForCenter = true
       }
       if (waitForCenter || drivingDir === dir) return
-      const d = definedRef.current
-      if (d.mode === "define" && !d.ok) return
       drivingDir = dir
-      beginDriveRef.current(dir, d.mode === "define" ? (dir > 0 ? d.upper : d.lower) : undefined, "stick")
+      beginDriveRef.current(dir, "stick")
       if (timer.current === null) {
-        // It did not start (already at that end, or past it).
+        // It did not start.
         drivingDir = null
         waitForCenter = true
       }
@@ -663,41 +634,23 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
   }
 
   /**
-   * Applies typed ends without driving, but only where they narrow a range the mechanism has
-   * already reached. Widening an end goes past tested travel, so that end must be driven to.
+   * Uses the typed ends as the range without driving. Nothing is sent to the robot, so it works with the robot disabled
+   * and the mechanism moved by hand.
    */
-  const applyDefined = () => {
-    if (definedError || definedMatchesVerified || driving !== null) return
-    if (verified.lower === null && verified.upper === null) return
+  const applyManualRange = () => {
+    if (definedError) return
     setError(null)
-    const applied: string[] = []
-    const needsDrive: string[] = []
-    if (verified.lower !== null && lowerValue >= verified.lower) {
-      if (lowerValue !== verified.lower) applied.push(`lower ${fmt(lowerValue)}`)
-      setVerifiedBound("lower", lowerValue)
-    } else needsDrive.push("lower")
-    if (verified.upper !== null && upperValue <= verified.upper) {
-      if (upperValue !== verified.upper) applied.push(`upper ${fmt(upperValue)}`)
-      setVerifiedBound("upper", upperValue)
-    } else needsDrive.push("upper")
-
-    const list = new Intl.ListFormat("en", { type: "conjunction" })
-    const appliedText = applied.length ? `Applied ${list.format(applied)}. ` : ""
-    if (needsDrive.length === 0) {
-      setNote({
-        tone: "info",
-        text: applied.length ? `${appliedText}It is inside travel already reached, so no drive test is needed.` : "Range unchanged.",
-      })
-    } else {
-      // One whole sentence per case, rather than plurals stitched together.
-      const test =
-        needsDrive.length === 2
-          ? "The lower and upper ends go past travel that has been reached, so they must be tested: start verification and hold the drive buttons below."
-          : `The ${needsDrive[0]} end goes past travel that has been reached, so it must be tested: start verification and hold the drive button below.`
-      setNote({ tone: "warn", text: `${appliedText}${test}` })
-    }
+    setNote(null)
+    setVerifiedBound("lower", lowerValue)
+    setVerifiedBound("upper", upperValue)
   }
-
+  /** Fills in an end from where the mechanism is now. */
+  const fillFromPosition = (side: Side) => {
+    const now = mechanismName ? axisReader(nt, mechanismName, axis).position() : undefined
+    const value = now ?? position
+    if (value === undefined) return
+    ;(side === "lower" ? setDefinedLower : setDefinedUpper)(value.toFixed(decimals))
+  }
 
   const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return
@@ -747,13 +700,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         ? "The lower end must be below the upper end."
         : null
   const definedMatchesVerified = !definedError && verified.lower === lowerValue && verified.upper === upperValue
-  definedRef.current = { mode, lower: lowerValue, upper: upperValue, ok: definedError === null }
   const outsideSoft =
     !definedError &&
     ((softLower !== undefined && lowerValue < softLower) || (softUpper !== undefined && upperValue > softUpper))
 
   const holdClass =
-    "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
+    "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium enabled:hover:border-foreground disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
 
   // Each part of the page, so the order can change while verifying: on a phone the drive buttons then sit right under
   // the gauge, with the settings and their help below.
@@ -761,53 +713,51 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     <>
       <Segmented
         label="How to set the range"
-        options={[["find", "Find ends by driving"], ["define", "Enter range and test it"]] as const}
+        options={[["find", "Find ends by driving"], ["define", "Enter range manually"]] as const}
         value={mode}
         onChange={selectMode}
         disabled={driving !== null}
       />
 
       {mode === "define" && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            With the robot disabled, move the mechanism by hand to each end and use its position, or type the ends. Nothing
+            is driven.
+          </p>
           <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">{`Lower end (${unit})`}</span>
-              <Input
-                inputMode="decimal"
-                aria-invalid={definedError !== null && (definedLower !== "" || definedUpper !== "")}
-                aria-describedby="defined-range-error"
-                className="font-mono"
-                value={definedLower}
-                disabled={driving !== null}
-                onChange={(e) => setDefinedLower(e.target.value)}
-                onBlur={applyDefined}
-                onKeyDown={blurOnEnter}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">{`Upper end (${unit})`}</span>
-              <Input
-                inputMode="decimal"
-                aria-invalid={definedError !== null && (definedLower !== "" || definedUpper !== "")}
-                aria-describedby="defined-range-error"
-                className="font-mono"
-                value={definedUpper}
-                disabled={driving !== null}
-                onChange={(e) => setDefinedUpper(e.target.value)}
-                onBlur={applyDefined}
-                onKeyDown={blurOnEnter}
-              />
-            </label>
+            {(
+              [
+                ["lower", "Lower end", definedLower, setDefinedLower],
+                ["upper", "Upper end", definedUpper, setDefinedUpper],
+              ] as const
+            ).map(([side, label, value, set]) => (
+              <div key={side} className="flex flex-col gap-1.5">
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="text-xs uppercase tracking-wider text-muted-foreground">{`${label} (${unit})`}</span>
+                  <Input
+                    inputMode="decimal"
+                    aria-invalid={definedError !== null && (definedLower !== "" || definedUpper !== "")}
+                    aria-describedby="defined-range-error"
+                    className="font-mono"
+                    value={value}
+                    onChange={(e) => set(e.target.value)}
+                    onKeyDown={blurOnEnter}
+                  />
+                </label>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-9 whitespace-normal py-2"
+                  disabled={position === undefined}
+                  aria-label={`Use the current position as the ${side} end`}
+                  onClick={() => fillFromPosition(side)}
+                >
+                  <Crosshair data-icon="inline-start" />
+                  Use current position
+                </Button>
+              </div>
+            ))}
           </div>
-          <Hint summary="How entering a range works" className={verifying ? "hidden" : undefined}>
-            <ul className="flex list-disc flex-col gap-1 ps-4">
-              <li>{verified.lower !== null || verified.upper !== null ? "Starts from the range already found." : "An end only counts once the mechanism has been driven there."}</li>
-              <li>Edits apply on Enter or when you click away.</li>
-              <li>Narrowing an end applies at once. Widening one means driving there to test it.</li>
-              <li>Voltage halves near each end to limit overshoot.</li>
-              <li>A stall or fault on the way marks where it stopped.</li>
-            </ul>
-          </Hint>
           <div id="defined-range-error" role="status" className="contents">
             {definedError && (definedLower !== "" || definedUpper !== "") && (
               <Notice tone="warn" live={false}>
@@ -816,10 +766,26 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
             )}
             {outsideSoft && (
               <Notice tone="warn" live={false}>
-                Part of this range is outside the robot’s soft limits. Driving stops at the soft limit.
+                Part of this range is outside the robot’s soft limits, which still stop the mechanism.
               </Notice>
             )}
           </div>
+          {position === undefined && <Notice>No position from the robot yet. Type the ends instead.</Notice>}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={applyManualRange} disabled={definedError !== null || definedMatchesVerified}>
+              <Check data-icon="inline-start" />
+              Use this range
+            </Button>
+            {!rangeVerified && skipControl}
+          </div>
+          <Hint summary="How entering a range works">
+            <ul className="flex list-disc flex-col gap-1 ps-4">
+              <li>The tuner sends no voltage here, so the robot can stay disabled.</li>
+              <li>Use current position reads where the mechanism is now.</li>
+              <li>Live Tuning stops if the mechanism leaves this range, so leave room before a hard stop.</li>
+              <li>The range is not tested by driving. To test it, find the ends by driving instead.</li>
+            </ul>
+          </Hint>
         </div>
       )}
     </>
@@ -1134,14 +1100,14 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
         verifiedUpper={verified.upper}
       />
 
-      {!supported && (
+      {!supported && mode === "find" && (
         <Notice tone="warn">
           This robot does not publish voltage/enabled and voltage/setpoint, which range verification uses to drive the mechanism. Update YAMS to a
-          version with voltage live tuning, or skip this step.
+          version with voltage live tuning, enter the range manually, or skip this step.
         </Notice>
       )}
 
-      {supported && position !== undefined && (softLower === undefined || softUpper === undefined) && (
+      {mode === "find" && supported && position !== undefined && (softLower === undefined || softUpper === undefined) && (
         <Notice tone="warn">
           {`No ${softLower === undefined && softUpper === undefined ? "soft limits" : `${softLower === undefined ? "lower" : "upper"} soft limit`}: drives stop only at a hard stop, on over-current or when you let go.`}
         </Notice>
@@ -1150,43 +1116,16 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
       {verifying ? (
         <>
           <div className="flex flex-col gap-3">
-            {mode === "find" ? (
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
-                  <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
-                  {`Hold: drive ${negLabel} (${formatVolts(minVolts)})`}
-                </button>
-                <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
-                  {`Hold: drive ${posLabel} (+${formatVolts(maxVolts)})`}
-                  <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  {...holdProps(-1, () => beginDrive(-1, lowerValue))}
-                  disabled={!verifying || !supported || definedError !== null || noVolts(-1)}
-                  className={holdClass}
-                  data-active={driving === -1}
-                >
-                  <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
-                  {definedError ? "Hold: drive to lower end" : `Hold: drive to ${fmt(lowerValue)}`}
-                  <span className="font-mono text-xs opacity-70 tabular">{formatVolts(minVolts)}</span>
-                </button>
-                <button
-                  type="button"
-                  {...holdProps(1, () => beginDrive(1, upperValue))}
-                  disabled={!verifying || !supported || definedError !== null || noVolts(1)}
-                  className={holdClass}
-                  data-active={driving === 1}
-                >
-                  <span className="font-mono text-xs opacity-70 tabular">{`+${formatVolts(maxVolts)}`}</span>
-                  {definedError ? "Hold: drive to upper end" : `Hold: drive to ${fmt(upperValue)}`}
-                  <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
-                </button>
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
+                <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
+                {`Hold: drive ${negLabel} (${formatVolts(minVolts)})`}
+              </button>
+              <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
+                {`Hold: drive ${posLabel} (+${formatVolts(maxVolts)})`}
+                <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" className="h-auto min-h-9 whitespace-normal py-2" {...markProps("lower")} disabled={position === undefined}>
                 <Flag data-icon="inline-start" />
@@ -1211,9 +1150,13 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           {notices}
           {driveSettings}
           {releaseSetup}
-          {rangeSetup}
           {holdSetup}
           {driveInputSetup}
+        </>
+      ) : mode === "define" ? (
+        <>
+          {rangeSetup}
+          {notices}
         </>
       ) : (
         <>
