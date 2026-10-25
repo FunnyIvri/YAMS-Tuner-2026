@@ -91,7 +91,7 @@ export function StopBar() {
                   className="rounded-sm p-1 text-muted-foreground hover:text-foreground transition-[scale,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96]"
                   aria-label="Dismiss stop message"
                 >
-                  <X className="size-4" />
+                  <X className="size-4" strokeWidth={2} />
                 </button>
               </p>
             ) : (
@@ -112,7 +112,7 @@ export function StopBar() {
               "disabled:bg-muted disabled:text-muted-foreground",
             )}
           >
-            <OctagonX className="size-5" aria-hidden />
+            <OctagonX className="size-5" strokeWidth={2.5} aria-hidden />
             Stop
             <Kbd className="hidden sm:inline-flex">Space</Kbd>
           </button>
@@ -121,7 +121,7 @@ export function StopBar() {
       {active && rangeWarning && (
         <div role="alert" className="bg-hazard text-hazard-foreground">
           <p className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-sm leading-relaxed">
-            <TriangleAlert className="size-4 shrink-0" aria-hidden />
+            <TriangleAlert className="size-4 shrink-0" strokeWidth={2.5} aria-hidden />
             <span className="font-mono text-xs font-semibold uppercase tracking-wider">Out of range</span>
             <span>{rangeWarning}</span>
           </p>
@@ -130,7 +130,7 @@ export function StopBar() {
       {active && currentWarning && (
         <div role="alert" className="bg-hazard text-hazard-foreground">
           <p className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-2 text-sm leading-relaxed">
-            <TriangleAlert className="size-4 shrink-0" aria-hidden />
+            <TriangleAlert className="size-4 shrink-0" strokeWidth={2.5} aria-hidden />
             <span className="font-mono text-xs font-semibold uppercase tracking-wider">Current warning</span>
             <span>{currentWarning}</span>
             <button

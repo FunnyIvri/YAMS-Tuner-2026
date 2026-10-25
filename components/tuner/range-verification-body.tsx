@@ -714,7 +714,7 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
     ((softLower !== undefined && lowerValue < softLower) || (softUpper !== undefined && upperValue > softUpper))
 
   const holdClass =
-    "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium enabled:hover:border-foreground disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
+    "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium transition-[scale,border-color,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96] enabled:hover:border-foreground disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
 
   // Each part of the page, so the order can change while verifying: on a phone the drive buttons then sit right under
   // the gauge, with the settings and their help below.
@@ -1152,12 +1152,12 @@ export function VerificationBody({ skipControl }: { skipControl: ReactNode }) {
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2">
               <button type="button" {...holdProps(-1, () => beginDrive(-1))} className={holdClass} data-active={driving === -1}>
-                <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
+                <ChevronLeft className="size-5" strokeWidth={2} aria-hidden />
                 {`Hold: drive ${negLabel} (${formatVolts(minVolts)})`}
               </button>
               <button type="button" {...holdProps(1, () => beginDrive(1))} className={holdClass} data-active={driving === 1}>
                 {`Hold: drive ${posLabel} (+${formatVolts(maxVolts)})`}
-                <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
+                <ChevronRight className="size-5" strokeWidth={2} aria-hidden />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">

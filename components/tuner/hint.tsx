@@ -7,7 +7,7 @@ export function Hint({ summary, children, className }: { summary: string; childr
   return (
     <details className={cn("hint group rounded-md border border-border text-xs text-muted-foreground", className)}>
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 font-medium select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-3.5 shrink-0 group-open:rotate-90 motion-safe:transition-transform motion-safe:duration-200" aria-hidden />
+        <ChevronRight strokeWidth={2} className="size-3.5 shrink-0 group-open:rotate-90 motion-safe:transition-transform motion-safe:duration-200" aria-hidden />
         {summary}
       </summary>
       <div className="px-3 pb-3 leading-relaxed">{children}</div>

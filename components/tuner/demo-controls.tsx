@@ -36,7 +36,7 @@ function DemoBar({ robot }: { robot: DemoRobot }) {
     <div className="border-b border-border bg-muted/40">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm">
         <p className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider">
-          <FlaskConical className="size-4" aria-hidden />
+          <FlaskConical className="size-4" strokeWidth={2.5} aria-hidden />
           Demo robot
         </p>
         <p className="text-xs text-muted-foreground">Simulated in this page. Nothing real moves.</p>

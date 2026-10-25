@@ -103,7 +103,7 @@ function SkipRangeDialog() {
         </AlertDialogCancel>
         <AlertDialogHeader className="pe-8">
           <AlertDialogTitle className="flex items-center gap-2">
-            <TriangleAlert className="size-5 shrink-0 text-destructive-text" aria-hidden />
+            <TriangleAlert className="size-5 shrink-0 text-destructive-text" strokeWidth={2} aria-hidden />
             Skip range-of-motion verification?
           </AlertDialogTitle>
           <AlertDialogDescription render={<div />} className="flex flex-col gap-2 text-start">

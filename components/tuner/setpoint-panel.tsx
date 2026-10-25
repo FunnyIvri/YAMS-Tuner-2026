@@ -849,7 +849,7 @@ export function EditableBound({
           title="Select to edit"
           aria-label={`${label}: ${format(value)}. Select to edit.`}
           aria-describedby={note ? noteId : undefined}
-          className="rounded-sm border border-dashed border-transparent px-1.5 py-0.5 hover:border-border hover:text-foreground focus-visible:border-focus-ring focus-visible:outline-none"
+          className="rounded-sm border border-dashed border-transparent px-1.5 py-0.5 transition-[border-color,color] duration-150 hover:border-border hover:text-foreground focus-visible:border-focus-ring focus-visible:outline-none"
           onClick={() => {
             setDraft(value.toFixed(digits))
             setNote(null)

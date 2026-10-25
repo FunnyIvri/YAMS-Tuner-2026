@@ -179,6 +179,11 @@
   html {
     scroll-padding-top: calc(var(--stop-bar-h, 4rem) + 1rem);
   }
+  /* An icon's strokeWidth is its drawn width in pixels at any icon size, so it can match the text beside it. Lucide's
+     absoluteStrokeWidth can't do this: it scales by the size prop, and the icons are sized with classes. */
+  svg.lucide * {
+    vector-effect: non-scaling-stroke;
+  }
   /* Controls that draw their own pressed or selected state don't also get the system's grey tap flash. */
   button,
   [role="tab"],

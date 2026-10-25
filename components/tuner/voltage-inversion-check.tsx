@@ -107,7 +107,7 @@ export function VoltageInversionCheck() {
           <ul className="flex flex-col gap-1 text-sm">
             {wheels.map((w) => (
               <li key={w} className="flex items-center gap-2">
-                {passed.includes(w) ? <CircleCheck className="size-4 shrink-0" aria-hidden /> : <CircleDashed className="size-4 shrink-0" aria-hidden />}
+                {passed.includes(w) ? <CircleCheck className="size-4 shrink-0" strokeWidth={1.5} aria-hidden /> : <CircleDashed className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />}
                 {`${labels[w]}: ${passed.includes(w) ? "passed" : "not checked yet"}`}
               </li>
             ))}
@@ -238,7 +238,7 @@ function CheckBody({ onPassed }: { onPassed: () => void }) {
   return (
     <>
       <div className="flex gap-3 rounded-md border border-destructive bg-destructive/10 p-3 text-sm leading-relaxed text-foreground">
-        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-destructive-text" aria-hidden />
+        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-destructive-text" strokeWidth={1.5} aria-hidden />
         <div className="flex flex-col gap-1.5">
           <p className="font-semibold text-destructive-text">Be very careful during this step.</p>
           <p>
@@ -475,7 +475,7 @@ function TrialStatus({ label, result }: { label: string; result: Trial }) {
       className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm data-[result=against]:border-hazard data-[result=against]:bg-hazard/15 data-[result=with]:border-foreground"
       data-result={result ?? "none"}
     >
-      <Icon className="size-4 shrink-0" aria-hidden />
+      <Icon className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />
       <span>{label}</span>
       <span className="sr-only">{result === "with" ? "confirmed" : result === "against" ? "wrong direction" : "not tested yet"}</span>
     </div>

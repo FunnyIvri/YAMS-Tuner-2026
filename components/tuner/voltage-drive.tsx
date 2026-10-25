@@ -403,7 +403,7 @@ export function VoltageDrive() {
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   })
   const holdClass =
-    "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium enabled:hover:border-foreground disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
+    "flex min-h-14 touch-none select-none items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-center font-medium transition-[scale,border-color,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96] enabled:hover:border-foreground disabled:opacity-50 data-[active=true]:border-foreground data-[active=true]:bg-hazard data-[active=true]:text-hazard-foreground"
 
   return (
     <>
@@ -425,12 +425,12 @@ export function VoltageDrive() {
       )}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" {...holdProps(-1)} className={holdClass} data-active={driving === -1}>
-          <ChevronLeft className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
+          <ChevronLeft className="size-5" strokeWidth={2} aria-hidden />
           {`Hold: drive ${negLabel} (${formatVolts(settings.minVolts)})`}
         </button>
         <button type="button" {...holdProps(1)} className={holdClass} data-active={driving === 1}>
           {`Hold: drive ${posLabel} (+${formatVolts(settings.maxVolts)})`}
-          <ChevronRight className="size-5" strokeWidth={2} absoluteStrokeWidth aria-hidden />
+          <ChevronRight className="size-5" strokeWidth={2} aria-hidden />
         </button>
       </div>
       <div className="flex flex-col gap-1.5">

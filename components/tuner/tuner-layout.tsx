@@ -162,14 +162,14 @@ function Progress({
                 onClick={() => onOpen(key)}
                 className={cn(
                   "flex min-h-11 w-full flex-col items-start justify-center gap-0.5 rounded-sm border border-border bg-card px-2 py-1.5 text-start font-mono text-xs uppercase tracking-wider text-muted-foreground",
-                  "enabled:hover:border-foreground disabled:cursor-default",
+                  "transition-[scale,border-color,background-color,color] duration-150 ease-out motion-safe:enabled:active:scale-[0.96] enabled:hover:border-foreground disabled:cursor-default",
                   // The open step is thicker and filled, a step still to come is dashed, so neither relies on colour.
                   isOpen && "border-2 border-primary-text bg-secondary text-foreground",
                   i > current && "border-dashed",
                 )}
               >
                 <span aria-hidden className="flex items-center gap-1 font-bold">
-                  {done ? <Check className="size-3.5 text-primary-text" strokeWidth={2.5} absoluteStrokeWidth /> : i + 1}
+                  {done ? <Check className="size-3.5 text-primary-text" strokeWidth={2.5} /> : i + 1}
                 </span>
                 {/* Below sm the boxes are too narrow for words, so the open step is named underneath instead. */}
                 <span aria-hidden className="hidden w-full break-words leading-tight hyphens-auto sm:block">
