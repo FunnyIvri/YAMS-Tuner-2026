@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { ChevronLeft, ChevronRight, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import { EditableBound } from "@/components/tuner/setpoint-panel"
 import { axisReader, formatPosition, yamsTopics } from "@/lib/yams/topics"
 import { formatVolts } from "@/lib/format"
 import { jogParams } from "@/lib/yams/safety"
-import { SignToggle, flipSign } from "@/components/tuner/sign-toggle"
+import { SignToggle, flipSign, useSignToggleShown } from "@/components/tuner/sign-toggle"
 import { nextText, parseFormatted, type NumberFormat } from "@/lib/number-format"
 
 type Dir = -1 | 1
@@ -570,6 +570,9 @@ export function VoltageSettingsPanel() {
   const gravityLoaded = kind === "elevator" || kind === "arm"
   const kGTopic = mechanismName ? `${yamsTopics(mechanismName).tuningPrefix}closedloop/feedforward/kG` : null
   const robotKG = useNtValue<number>(kGTopic)
+  const gravityInput = useRef<HTMLInputElement>(null)
+  // While its ± shows, − and + would read as the sign too, so they step aside.
+  const gravitySignShown = useSignToggleShown(gravityInput)
 
   return (
     <>
@@ -601,16 +604,19 @@ export function VoltageSettingsPanel() {
       {gravityLoaded && (
         <Group label="Gravity hold voltage">
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Lower the gravity hold voltage"
-              onClick={() => update({ gravityVolts: clampGravity(gravityVolts - GRAVITY_STEP_VOLTS) })}
-            >
-              −
-            </Button>
+            {!gravitySignShown && (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Lower the gravity hold voltage"
+                onClick={() => update({ gravityVolts: clampGravity(gravityVolts - GRAVITY_STEP_VOLTS) })}
+              >
+                −
+              </Button>
+            )}
             <NumberField
               id="gravity-volts"
+              inputRef={gravityInput}
               label="Gravity hold voltage"
               hideLabel
               unit="V"
@@ -619,14 +625,16 @@ export function VoltageSettingsPanel() {
               max={MAX_GRAVITY_VOLTS}
               onCommit={(v) => update({ gravityVolts: clampGravity(v) })}
             />
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Raise the gravity hold voltage"
-              onClick={() => update({ gravityVolts: clampGravity(gravityVolts + GRAVITY_STEP_VOLTS) })}
-            >
-              +
-            </Button>
+            {!gravitySignShown && (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Raise the gravity hold voltage"
+                onClick={() => update({ gravityVolts: clampGravity(gravityVolts + GRAVITY_STEP_VOLTS) })}
+              >
+                +
+              </Button>
+            )}
             {typeof robotKG === "number" && (
               <>
                 <Button
@@ -681,6 +689,7 @@ function NumberField({
   min,
   max,
   onCommit,
+  inputRef,
 }: {
   id: string
   label: string
@@ -690,9 +699,12 @@ function NumberField({
   min: number
   max: number
   onCommit: (v: number) => void
+  /** The field, for a caller that follows its focus. */
+  inputRef?: RefObject<HTMLInputElement | null>
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  const input = useRef<HTMLInputElement>(null)
+  const ownInput = useRef<HTMLInputElement>(null)
+  const input = inputRef ?? ownInput
   const format: NumberFormat = { negative: min < 0 }
   const shown = draft ?? String(value)
   const commit = (text = draft) => {
@@ -707,6 +719,13 @@ function NumberField({
         <label htmlFor={id} className="text-muted-foreground">
           {label}
         </label>
+      )}
+      {format.negative && (
+        <SignToggle
+          label={`the ${label.toLowerCase()}`}
+          input={input}
+          onFlip={(editing) => (editing ? setDraft(flipSign(shown)) : commit(flipSign(shown)))}
+        />
       )}
       <Input
         ref={input}
@@ -730,13 +749,6 @@ function NumberField({
           }
         }}
       />
-      {format.negative && (
-        <SignToggle
-          label={`the ${label.toLowerCase()}`}
-          input={input}
-          onFlip={(editing) => (editing ? setDraft(flipSign(shown)) : commit(flipSign(shown)))}
-        />
-      )}
       <span className="text-muted-foreground">{unit}</span>
     </div>
   )

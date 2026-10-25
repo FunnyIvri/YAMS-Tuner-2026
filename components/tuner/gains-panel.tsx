@@ -295,6 +295,17 @@ function RangeInput({
         <span className="text-muted-foreground">{unit}</span>
       </label>
       <div className="flex gap-1">
+      <SignToggle
+        label={`the ${label.toLowerCase()}`}
+        input={input}
+        onFlip={(editing) => {
+          const next = flipSign(shown)
+          if (editing) {
+            setDraft(next)
+            setError(null)
+          } else if (!apply(next)) setDraft(null)
+        }}
+      />
       <Input
         ref={input}
         id={id}
@@ -323,17 +334,6 @@ function RangeInput({
         }}
         onBlur={() => {
           if (!apply()) setDraft(null)
-        }}
-      />
-      <SignToggle
-        label={`the ${label.toLowerCase()}`}
-        input={input}
-        onFlip={(editing) => {
-          const next = flipSign(shown)
-          if (editing) {
-            setDraft(next)
-            setError(null)
-          } else if (!apply(next)) setDraft(null)
         }}
       />
       </div>
@@ -449,6 +449,19 @@ function GainInput({
         {hint && <span className="text-muted-foreground">{hint}</span>}
       </label>
       <div className="flex gap-1">
+      {format.negative && (
+        <SignToggle
+          label={def.key.startsWith("soft") ? `the ${def.label.toLowerCase()} soft limit` : def.label}
+          input={input}
+          onFlip={(editing) => {
+            const next = flipSign(shown)
+            if (editing) {
+              setDraft(next)
+              setInvalid(false)
+            } else if (!apply(next)) setInvalid(false)
+          }}
+        />
+      )}
       <Input
         ref={input}
         id={id}
@@ -481,19 +494,6 @@ function GainInput({
           }
         }}
       />
-      {format.negative && (
-        <SignToggle
-          label={def.key.startsWith("soft") ? `the ${def.label.toLowerCase()} soft limit` : def.label}
-          input={input}
-          onFlip={(editing) => {
-            const next = flipSign(shown)
-            if (editing) {
-              setDraft(next)
-              setInvalid(false)
-            } else if (!apply(next)) setInvalid(false)
-          }}
-        />
-      )}
       </div>
       {/* Read with the field; shown only when an entry is refused. */}
       <p id={`${id}-format`} className={cn("text-xs leading-snug text-destructive-text", !invalid && "sr-only")}>

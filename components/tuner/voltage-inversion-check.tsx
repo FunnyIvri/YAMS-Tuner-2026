@@ -432,6 +432,8 @@ function VoltageEntry({
         Type a voltage
       </label>
       <div className="flex gap-2">
+        {/* Only changes the text: a voltage is never sent until Apply. */}
+        {numberFormat.negative && <SignToggle label="the voltage" input={input} onFlip={() => setText(flipSign(text))} />}
         <Input
           ref={input}
           id={inputId}
@@ -455,8 +457,6 @@ function VoltageEntry({
             apply()
           }}
         />
-        {/* Only changes the text: a voltage is never sent until Apply. */}
-        {numberFormat.negative && <SignToggle label="the voltage" input={input} onFlip={() => setText(flipSign(text))} />}
         <Button variant="outline" onClick={() => apply()}>
           Apply
         </Button>
