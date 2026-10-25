@@ -71,8 +71,10 @@ export interface GainDef {
   path: string
   /** Rejects negative values when true. */
   nonNegative: boolean
-  group: "feedback" | "feedforward" | "profile" | "current" | "ramp"
+  group: "feedback" | "lqr" | "feedforward" | "profile" | "current" | "ramp"
   hint?: string
+  /** Rejects 0 and negative values when true, as for the LQR's tolerances. */
+  positive?: boolean
   /** What the field accepts. Without it, any number. */
   format?: NumberFormat
 }
@@ -83,6 +85,7 @@ export interface GainDef {
  */
 const GROUP_FORMATS: Record<GainDef["group"], NumberFormat> = {
   feedback: { significant: 4 },
+  lqr: { significant: 4 },
   feedforward: { significant: 4 },
   profile: { significant: 4 },
   current: { integer: true },
@@ -140,6 +143,16 @@ const GAINS: Omit<GainDef, "format">[] = [
   { key: "kP", label: "kP", path: "closedloop/feedback/kP", nonNegative: true, group: "feedback" },
   { key: "kI", label: "kI", path: "closedloop/feedback/kI", nonNegative: true, group: "feedback" },
   { key: "kD", label: "kD", path: "closedloop/feedback/kD", nonNegative: true, group: "feedback" },
+  // An LQR replaces kP, kI and kD: YAMS publishes these instead of them. Positions and velocities are in the units of
+  // the setpoints (lqrUnit converts an arm's velocities to degrees per second).
+  { key: "lqrQelmsPosition", label: "Position tolerance", path: "closedloop/lqr/qelms/position", nonNegative: true, positive: true, group: "lqr" },
+  { key: "lqrQelmsVelocity", label: "Velocity tolerance", path: "closedloop/lqr/qelms/velocity", nonNegative: true, positive: true, group: "lqr" },
+  { key: "lqrRelms", label: "Voltage effort", path: "closedloop/lqr/relms", nonNegative: true, positive: true, group: "lqr", hint: "V" },
+  { key: "lqrModelPosition", label: "Model position std dev", path: "closedloop/lqr/model/position", nonNegative: true, positive: true, group: "lqr" },
+  { key: "lqrModelVelocity", label: "Model velocity std dev", path: "closedloop/lqr/model/velocity", nonNegative: true, positive: true, group: "lqr" },
+  { key: "lqrEncoderPosition", label: "Encoder std dev", path: "closedloop/lqr/encoder/position", nonNegative: true, positive: true, group: "lqr" },
+  { key: "lqrEncoderVelocity", label: "Encoder std dev", path: "closedloop/lqr/encoder/velocity", nonNegative: true, positive: true, group: "lqr" },
+  { key: "lqrMaxVoltage", label: "Max voltage", path: "closedloop/lqr/maxVoltage", nonNegative: true, positive: true, group: "lqr", hint: "V" },
   { key: "kS", label: "kS", path: "closedloop/feedforward/kS", nonNegative: true, group: "feedforward", hint: "V" },
   { key: "kV", label: "kV", path: "closedloop/feedforward/kV", nonNegative: true, group: "feedforward" },
   { key: "kA", label: "kA", path: "closedloop/feedforward/kA", nonNegative: true, group: "feedforward" },
@@ -152,7 +165,21 @@ const GAINS: Omit<GainDef, "format">[] = [
   { key: "closedRamp", label: "Closed-loop ramp", path: "ramprate/dutycycle/closedloop", nonNegative: true, group: "ramp", hint: "s" },
 ]
 
-export const GAIN_DEFS: GainDef[] = GAINS.map((g) => ({ ...g, format: { ...GROUP_FORMATS[g.group], negative: !g.nonNegative } }))
+/**
+ * The units of an LQR value, which YAMS publishes in the setpoints' units: degrees and RPM for an arm, pivot or
+ * flywheel, meters and m/s for an elevator. An arm's or pivot's velocities are shown in degrees per second, like its
+ * motion profile, and converted back to RPM. Null for a value in volts.
+ */
+export function lqrUnit(key: string, kind: MechanismKind, axis: Axis): GainUnit | null {
+  const position = key === "lqrQelmsPosition" || key === "lqrModelPosition" || key === "lqrEncoderPosition"
+  const velocity = key === "lqrQelmsVelocity" || key === "lqrModelVelocity" || key === "lqrEncoderVelocity"
+  if (axis === "linear") return position ? sameUnit("m") : velocity ? sameUnit("m/s") : null
+  if (position) return sameUnit("deg")
+  if (velocity) return kind === "flywheel" ? sameUnit("RPM") : degreesOverRpm("deg/s", "RPM")
+  return null
+}
+
+export const GAIN_DEFS: GainDef[] = GAINS.map((g) => ({ ...g, format: { ...GROUP_FORMATS[g.group], negative: !g.nonNegative, positive: g.positive } }))
 
 /** Mechanism telemetry names published under /Tuning/ with a tunable setpoint. */
 export function discoverMechanisms(nt: LiveNT): string[] {

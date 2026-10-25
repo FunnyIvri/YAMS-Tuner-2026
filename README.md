@@ -13,6 +13,7 @@ A browser tool for safely live tuning [YAMS](https://github.com/Yet-Another-Soft
 - Guided safety checklist and voltage/inversion check before anything moves.
 - Range-of-motion verification that jogs the mechanism slowly toward each soft limit and aborts on inversion, stalls or overshoot.
 - Setpoint control, a setpoint alternator, and live editing of gains and feedforward.
+- LQR mechanisms: the LQR's tolerances, voltage effort, model and encoder trust and maximum voltage are edited in place of kP, kI and kD. YAMS's `lqr_mechanisms` example is a robot to try it on.
 - Double flywheels: two flywheels in one subsystem, sharing its Live Tuning command, tuned together. Each wheel gets its own setpoint and gains, and the safety checks cover both wheels.
 - Live telemetry: position, velocity, setpoint, voltage, current and temperature.
 - A stop bar that is always visible.

@@ -8,6 +8,8 @@ export interface NumberFormat {
   significant?: number
   /** A minus sign is allowed. */
   negative?: boolean
+  /** Only a number above 0 is finished, as for an LQR's tolerances. "0." can still be typed on the way to "0.5". */
+  positive?: boolean
 }
 
 /**
@@ -39,7 +41,7 @@ export function fitsFormat(text: string, f: NumberFormat) {
 export function parseFormatted(text: string, f: NumberFormat): number | null {
   if (!fitsFormat(text, f) || !/\d/.test(text) || text.endsWith(".")) return null
   const v = Number(text)
-  return Number.isFinite(v) ? v : null
+  return Number.isFinite(v) && !(f.positive && v <= 0) ? v : null
 }
 
 /**
@@ -57,7 +59,7 @@ export function nextText(previous: string, typed: string, f: NumberFormat) {
 export function describeFormat(f: NumberFormat) {
   if (f.integer) return f.negative ? "A whole number." : "A whole number, 0 or more."
   const parts = [f.decimals !== undefined ? `up to ${f.decimals} decimal places` : null, f.significant !== undefined ? `up to ${f.significant} significant digits` : null].filter(Boolean)
-  const sign = f.negative ? "" : ", 0 or more"
+  const sign = f.positive ? " above 0" : f.negative ? "" : ", 0 or more"
   return parts.length > 0 ? `A number${sign}, ${parts.join(" and ")}.` : `A number${sign}.`
 }
 

@@ -10,7 +10,7 @@ import { VoltageSettingsPanel, useLiveTune } from "@/components/tuner/voltage-dr
 import { WheelPicker } from "@/components/tuner/wheel-picker"
 import { SignToggle, flipSign } from "@/components/tuner/sign-toggle"
 import { Button } from "@/components/ui/button"
-import { GAIN_DEFS, axisReader, formatPosition, positionUnit, profileUnit, wheelLabels, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
+import { GAIN_DEFS, axisReader, formatPosition, lqrUnit, positionUnit, profileUnit, wheelLabels, yamsTopics, type GainDef, type GainUnit } from "@/lib/yams/topics"
 import { cn } from "@/lib/utils"
 import { describeFormat, inputModeFor, nextText, parseFormatted, type NumberFormat } from "@/lib/number-format"
 
@@ -19,6 +19,7 @@ const ANY_NUMBER: NumberFormat = { negative: true }
 
 const GAIN_GROUPS: { key: GainDef["group"]; label: string }[] = [
   { key: "feedback", label: "Feedback" },
+  { key: "lqr", label: "LQR" },
   { key: "feedforward", label: "Feedforward" },
   { key: "profile", label: "Motion profile" },
 ]
@@ -56,7 +57,7 @@ export function GainsPanel() {
   const group = (key: GainDef["group"], label: string) => {
     const defs = available.filter((g) => g.group === key)
     if (defs.length === 0) return null
-    const units = defs.map((g) => (g.group === "profile" ? profileUnit(g.key, kind, axis) : null))
+    const units = defs.map((g) => (g.group === "profile" ? profileUnit(g.key, kind, axis) : g.group === "lqr" ? lqrUnit(g.key, kind, axis) : null))
     const converted = units.find((u) => u && u.label !== u.wireLabel)
     return (
       <GainGroup key={key} label={label}>
@@ -65,6 +66,11 @@ export function GainsPanel() {
             <GainInput key={`${name}|${g.key}|${kind}|${axis}`} def={g} topic={prefix + g.path} unit={units[i]} />
           ))}
         </div>
+        {key === "lqr" && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {"This mechanism runs an LQR in place of kP, kI and kD. Smaller tolerances, or a larger voltage effort, make it correct harder. The std devs say how far to trust the model and the encoder: a smaller encoder std dev follows the measurement more closely. Each change rebuilds the LQR on the robot."}
+          </p>
+        )}
         {converted && (
           <p className="text-xs leading-relaxed text-muted-foreground">
             {"Entered in degrees for this mechanism type, then converted to the RPM-based units YAMS reads."}
@@ -424,7 +430,7 @@ function GainInput({
   const apply = (text = draft): boolean => {
     if (text === null) return true
     const v = parseFormatted(text, format)
-    if (v === null || (def.nonNegative && v < 0) || (valid && !valid(v))) {
+    if (v === null || (def.nonNegative && v < 0) || (def.positive && v <= 0) || (valid && !valid(v))) {
       setInvalid(true)
       return false
     }

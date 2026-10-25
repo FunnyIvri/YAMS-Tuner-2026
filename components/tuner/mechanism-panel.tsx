@@ -40,7 +40,9 @@ export function MechanismPanel({ onContinue }: { onContinue: () => void }) {
     }
     setMechanismName(name)
     setKind(guessKind(nt, name))
-    const matches = (m: string, c: string) => m === c || m.startsWith(c) || c.startsWith(m)
+    // The same name, or one starting with the other, or a subsystem named after the mechanism's own part of the
+    // name: "LQRFlyWheel/FlyWheelMotor" and "LQRFlyWheelSubsystem".
+    const matches = (m: string, c: string) => m === c || m.startsWith(c) || c.startsWith(m) || c.startsWith(m.split("/")[0])
     const match = commands.find((c) => c === name) ?? commands.find((c) => matches(name, c))
     // Otherwise the one command no mechanism is named after, if there is just one: a subsystem whose mechanisms
     // are named apart from it, such as a double flywheel's two wheels.
