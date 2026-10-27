@@ -52,15 +52,45 @@ export function isLoopbackHost(host: string): boolean {
  * `uint64 opModeHash:56; uint64 robotMode:2; bool enabled:1; bool eStop:1; bool fmsAttached:1; bool dsAttached:1;`
  */
 export function decodeControlWord(value: unknown): RobotState | null {
-  if (!(value instanceof Uint8Array) || value.length < 8) return null
-  const flags = value[7]
-  const modes: RobotMode[] = ["unknown", "autonomous", "teleoperated", "utility"]
-  return {
-    mode: modes[flags & 0b11],
-    enabled: (flags & 0b100) !== 0,
-    eStop: (flags & 0b1000) !== 0,
-    dsAttached: (flags & 0b100000) !== 0,
+  // If parsing from a raw HAL buffer or NetworkTables int representation
+  let flags = 0;
+
+  if (value instanceof Uint8Array && value.length >= 1) {
+    // If it's a binary byte stream buffer, extract the active byte
+    flags = value[value.length - 1]; 
+  } else if (typeof value === "number") {
+    // If parsed directly from FMSControlData or RobotState numerical topic
+    flags = value;
+  } else {
+    return null;
   }
+
+  // 2026 Bitmask Breakdowns
+  const enabled = (flags & 0x01) !== 0;
+  const autonomous = (flags & 0x02) !== 0;
+  const test = (flags & 0x04) !== 0;
+  const eStop = (flags & 0x08) !== 0;
+  const fmsAttached = (flags & 0x10) !== 0;
+  const dsAttached = (flags & 0x20) !== 0;
+
+  // Resolve mode string based on priority rules
+  let currentMode: RobotMode;
+  if (!enabled) {
+    currentMode = "unknown";
+  } else if (autonomous) {
+    currentMode = "autonomous";
+  } else if (test) {
+    currentMode = "utility";
+  } else {
+    currentMode = "teleoperated";
+  }
+
+  return {
+    mode: currentMode,
+    enabled,
+    eStop,
+    dsAttached,
+  };
 }
 
 /**

@@ -321,6 +321,7 @@ export function TunerProvider({ children }: { children: ReactNode }) {
       if (nt.getStatus() !== "connected") return "Connect to the robot first."
       if (!name) return "Choose a mechanism first."
       if (!cmd) return "Choose the subsystem’s Live Tuning command first."
+      console.log(nt.get(CONTROL_WORD))
       const state = decodeControlWord(nt.get(CONTROL_WORD))
       if (!state?.enabled) return "Enable the robot from the Driver Station first (Teleop or Test)."
       if (state.eStop) return "The robot is E-stopped. Restart the robot to clear the E-stop, then start again."
