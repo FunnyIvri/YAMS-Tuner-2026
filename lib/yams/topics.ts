@@ -68,7 +68,7 @@ export type YamsTopics = ReturnType<typeof yamsTopics>;
 
 /** The Tunable "Live Tuning" command YAMS registers on the subsystem. */
 export function liveTuningCommandTopic(subsystem: string) {
-  return `/Tuning/${subsystem}/Live Tuning/running`;
+  return `/SmartDashboard/Mechanisms/Commands/${subsystem}/Live Tuning/running`;
 }
 
 export interface GainDef {
